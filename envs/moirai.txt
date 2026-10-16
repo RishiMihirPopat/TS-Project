@@ -1,0 +1,13 @@
+# Moirai (Salesforce uni2ts) isolated environment (Python 3.11)
+torch>=2.2.0,<2.5.0
+uni2ts>=1.1.0
+gluonts>=0.14.0
+einops>=0.7.0
+jaxtyping>=0.2.28
+numpy==1.26.4
+pandas==2.2.2
+pyarrow==17.0.0
+codecarbon==2.6.0
+psutil==6.0.0
+pyyaml==6.0.2
+huggingface-hub>=0.24.0

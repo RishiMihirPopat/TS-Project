@@ -1,0 +1,11 @@
+# Tiny Time Mixers (IBM Granite TTM) isolated environment (Python 3.11)
+torch>=2.2.0,<2.6.0
+granite-tsfm>=0.2.18
+transformers>=4.40.0
+numpy==1.26.4
+pandas==2.2.2
+pyarrow==17.0.0
+codecarbon==2.6.0
+psutil==6.0.0
+pyyaml==6.0.2
+huggingface-hub>=0.24.0
