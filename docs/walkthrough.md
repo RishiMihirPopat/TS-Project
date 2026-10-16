@@ -52,3 +52,14 @@ This document explains every module in `src/tsdomain/` and `seed/` in plain lang
 - **Formulas implemented:**
   - **Garman–Klass (1980) daily variance:**
     $$\sigma^2_{\text{GK}, t} = \frac{1}{2}\left(\ln\frac{H_t}{L_t}\right)^2 - (2\ln 2 - 1)\left(\ln\frac{C_t}{O_t}\right)^2$$
+
+---
+
+## Phase 2 — Classical Baselines & Leaderboard Cross-Check
+
+### 8. `src/tsdomain/baselines/run_baselines.py`
+- **What it does:**
+  1. Executes `run_leaderboard_crosscheck()` on full GIFT-Eval configurations to verify that our local windowing and MASE computation match the published GIFT-Eval `Seasonal_Naive` leaderboard exactly (`abs_diff < 1e-6`).
+  2. Computes `best_classical` across all 97 GIFT-Eval leaderboard configurations (`results/metrics/best_classical_leaderboard.parquet`) as $\min(\text{MASE}_{\text{Seasonal\_Naive}}, \text{MASE}_{\text{Auto\_ETS}}, \text{MASE}_{\text{Auto\_Theta}}, \text{MASE}_{\text{Auto\_Arima}})$.
+  3. Runs `Naive`, `SeasonalNaive`, `Drift`, `AutoETS`, `AutoTheta`, and `AutoARIMA` across the 13 local benchmark configurations (11 stratified GIFT-Eval configs + `unseen_mandi/W/short` + `unseen_recency/D/short`), writing canonical forecast parquets (`results/forecasts/{model}/{config}.parquet`), `.meta.json` sidecars, and `results/metrics/best_classical_local.parquet`.
+- **Why it exists:** Establishes the verified classical baseline denominator ($\text{MASE}_{\text{best\_classical}}$) required for `log_ratio` in Phase 6 and Pareto efficiency in Phase 9.

@@ -27,3 +27,16 @@ All non-obvious engineering, methodological, and external-fact decisions are rec
 7. **S&P 500 Daily OHLC Fallback (`src/tsdomain/data/finance.py`):**
    - *Verified Fact:* `https://stooq.com/q/d/l/?s=^spx&i=d` returned an HTML redirect page at build time.
    - *Decision:* `fetch_spx_daily_ohlc()` attempts Stooq first and automatically falls back to the Yahoo Finance v8 chart endpoint (`%5EGSPC`, 1990–2026, 9,247 trading days), caching `data/raw/spx_daily.csv` and `data/processed/spx_daily.parquet`.
+
+## 2026-10-16 — Phase 2: Classical Baselines and Leaderboard Cross-Check
+
+8. **Exact GIFT-Eval `Seasonal_Naive` Leaderboard Parity (`results/metrics/leaderboard_crosscheck.parquet`):**
+   - *Result:* Running `Seasonal_Naive` on the full GIFT-Eval rolling test windows (`exact_gift_eval=True`) reproduced the published GIFT-Eval leaderboard MASE to 6 decimal places (`abs_diff = 0.000000`):
+     - `us_births/M/short`: local `0.760531` vs leaderboard `0.760531` (`diff = 0.000000`)
+     - `saugeen/W/short`: local `1.990658` vs leaderboard `1.990658` (`diff = 0.000000`)
+     - `solar/W/short`: local `1.470351` vs leaderboard `1.470351` (`diff = 0.000000`)
+     - `hospital/M/short`: local `0.920528` vs leaderboard `0.920528` (`diff = 0.000000`)
+   - *Key Factor:* Matching GluonTS `get_seasonality(freq)` (`m = 1` for `D` and `W`, `m = 12` for `M`, `m = 4` for `Q`, `m = 24` for `H`) and `LastValueImputation()` on training series was essential to achieve zero discrepancy.
+9. **Batched `StatsForecast` Execution & `season_length` Cap for `AutoETS`/`AutoARIMA`:**
+   - *Context:* `StatsForecast`'s `AutoETS` supports `season_length <= 24`, and state-space `AutoARIMA` with `m = 52` creates large companion matrices.
+   - *Decision:* In `run_classical_on_dataset()`, all windows of a configuration are batched into a single vectorized `StatsForecast.forecast()` call, and `season_length` is passed as `m` when `m <= 24` (and `1` when `m > 24`) for `AutoETS` and `AutoARIMA`, while `SeasonalNaive` and `AutoTheta` (which uses classical seasonal decomposition) retain the full `m` (e.g. `52` on `unseen_mandi/W/short`).

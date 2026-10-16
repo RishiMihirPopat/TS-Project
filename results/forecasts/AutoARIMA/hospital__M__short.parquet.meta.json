@@ -1,0 +1,21 @@
+{
+  "model_id": "AutoARIMA",
+  "package_versions": {
+    "statsforecast": "2.0.1",
+    "statsmodels": "0.15.0"
+  },
+  "device": "cpu",
+  "seed": 42,
+  "context_length": 72,
+  "n_series": 60,
+  "n_windows": 60,
+  "runtime_s": 28.54829069999687,
+  "peak_ram_mb": 249.1875,
+  "peak_gpu_mb": 0.0,
+  "energy_kwh": 0.00011895121124998695,
+  "energy_method": "TDP_estimate",
+  "timestamp_utc": "2026-10-16T04:57:04.692330+00:00",
+  "platform": "Windows-10-10.0.26300-SP0",
+  "dataset_config": "hospital/M/short",
+  "season_length": 12
+}

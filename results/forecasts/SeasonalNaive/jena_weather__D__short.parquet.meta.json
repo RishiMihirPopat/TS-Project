@@ -1,0 +1,21 @@
+{
+  "model_id": "SeasonalNaive",
+  "package_versions": {
+    "statsforecast": "2.0.1",
+    "statsmodels": "0.15.0"
+  },
+  "device": "cpu",
+  "seed": 42,
+  "context_length": 321,
+  "n_series": 21,
+  "n_windows": 42,
+  "runtime_s": 0.13678279999294318,
+  "peak_ram_mb": 249.46875,
+  "peak_gpu_mb": 0.0,
+  "energy_kwh": 5.699283333039299e-07,
+  "energy_method": "TDP_estimate",
+  "timestamp_utc": "2026-10-16T04:57:07.572153+00:00",
+  "platform": "Windows-10-10.0.26300-SP0",
+  "dataset_config": "jena_weather/D/short",
+  "season_length": 1
+}

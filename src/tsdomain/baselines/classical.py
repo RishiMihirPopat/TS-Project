@@ -273,23 +273,131 @@ def run_classical_on_dataset(
     all_forecast_dfs: List[pd.DataFrame] = []
     all_metric_rows: List[Dict[str, float]] = []
 
-    for win in windows:
-        df_w, m_w = forecast_classical_window(
-            item_id=win["item_id"],
-            window_id=win["window_id"],
-            y_train=win["y_train"],
-            y_test=win["y_test"],
-            test_timestamps=win["test_timestamps"],
-            season_length=season_length,
-            model_name=model_name,
-        )
+    # Check if we can batch-run AutoETS / AutoTheta / AutoARIMA across all windows in one StatsForecast call
+    batched_preds: Dict[int, Tuple[np.ndarray, Dict[str, np.ndarray]]] = {}
+    if model_name in {"AutoETS", "AutoTheta", "AutoARIMA"} and len(windows) > 1:
+        try:
+            from statsforecast import StatsForecast
+            from statsforecast.models import AutoARIMA, AutoETS, AutoTheta
+
+            horizon = len(windows[0]["y_test"])
+            min_n = min(len(w["y_train"]) for w in windows)
+            m = int(season_length) if (season_length >= 1 and min_n >= 2 * season_length) else 1
+
+            sf_rows = []
+            for idx, w in enumerate(windows):
+                y_tr = np.asarray(w["y_train"], dtype=float)
+                y_tr = y_tr[~np.isnan(y_tr)]
+                # Cap training history for classical fit to last max(512, 4*m) observations for speed
+                max_hist = max(512, 4 * m)
+                if len(y_tr) > max_hist:
+                    y_tr = y_tr[-max_hist:]
+                uid = f"w_{idx}"
+                sf_rows.append(
+                    pd.DataFrame(
+                        {
+                            "unique_id": [uid] * len(y_tr),
+                            "ds": np.arange(len(y_tr), dtype=int),
+                            "y": y_tr,
+                        }
+                    )
+                )
+            df_batch = pd.concat(sf_rows, ignore_index=True)
+
+            if model_name == "AutoETS":
+                sf_model = AutoETS(season_length=(m if m <= 24 else 1))
+            elif model_name == "AutoTheta":
+                sf_model = AutoTheta(season_length=m)
+            else:
+                sf_model = AutoARIMA(
+                    season_length=(m if m <= 24 else 1),
+                    max_p=2,
+                    max_q=2,
+                    max_P=1,
+                    max_Q=1,
+                    stepwise=True,
+                    approximation=True,
+                )
+
+            sf = StatsForecast(models=[sf_model], freq=1, n_jobs=1)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                pred_all = sf.forecast(df=df_batch, h=horizon, level=[80, 60, 40, 20])
+
+            for idx, grp in pred_all.groupby("unique_id", sort=False):
+                w_idx = int(str(idx).split("_")[1])
+                mp = grp[model_name].to_numpy(dtype=float)
+                if np.isfinite(mp).all():
+                    q_dict = {
+                        "q0.1": grp.get(f"{model_name}-lo-80", pd.Series(mp)).to_numpy(dtype=float),
+                        "q0.2": grp.get(f"{model_name}-lo-60", pd.Series(mp)).to_numpy(dtype=float),
+                        "q0.3": grp.get(f"{model_name}-lo-40", pd.Series(mp)).to_numpy(dtype=float),
+                        "q0.4": grp.get(f"{model_name}-lo-20", pd.Series(mp)).to_numpy(dtype=float),
+                        "q0.5": mp.copy(),
+                        "q0.6": grp.get(f"{model_name}-hi-20", pd.Series(mp)).to_numpy(dtype=float),
+                        "q0.7": grp.get(f"{model_name}-hi-40", pd.Series(mp)).to_numpy(dtype=float),
+                        "q0.8": grp.get(f"{model_name}-hi-60", pd.Series(mp)).to_numpy(dtype=float),
+                        "q0.9": grp.get(f"{model_name}-hi-80", pd.Series(mp)).to_numpy(dtype=float),
+                    }
+                    # Replace any non-finite interval bounds with Gaussian fallback
+                    if all(np.isfinite(v).all() for v in q_dict.values()):
+                        batched_preds[w_idx] = (mp, q_dict)
+        except Exception:
+            batched_preds = {}
+
+    for idx, win in enumerate(windows):
+        if idx in batched_preds:
+            mean_pred, quantiles = batched_preds[idx]
+            y_train = win["y_train"]
+            y_test = win["y_test"]
+            test_timestamps = win["test_timestamps"]
+            item_id = win["item_id"]
+            window_id = win["window_id"]
+            horizon = len(y_test)
+            rows = []
+            for step_idx in range(horizon):
+                row = {
+                    "item_id": str(item_id),
+                    "window_id": int(window_id),
+                    "horizon_step": int(step_idx + 1),
+                    "timestamp": pd.Timestamp(test_timestamps[step_idx]),
+                    "y_true": float(y_test[step_idx]),
+                    "mean": float(mean_pred[step_idx]),
+                }
+                for col in QUANTILE_COLS:
+                    row[col] = float(quantiles[col][step_idx])
+                rows.append(row)
+            df_w = pd.DataFrame(rows)
+            q_map = {q: quantiles[f"q{q:.1f}"] for q in QUANTILE_LEVELS}
+            cov_info = coverage_and_width(y_test, quantiles["q0.1"], quantiles["q0.9"], y_train=y_train)
+            m_w = {
+                "item_id": str(item_id),
+                "window_id": int(window_id),
+                "mase": mase(y_test, mean_pred, y_train, m=season_length),
+                "rmsse": rmsse(y_test, mean_pred, y_train, m=season_length),
+                "rmse": rmse(y_test, mean_pred),
+                "mape": mape(y_test, mean_pred),
+                "crps": crps_weighted_quantile_loss(y_test, q_map),
+                "coverage_80": cov_info["coverage"],
+                "width_80": cov_info["scaled_width"],
+                "interval_score_80": interval_score(y_test, quantiles["q0.1"], quantiles["q0.9"], alpha=0.2),
+            }
+        else:
+            df_w, m_w = forecast_classical_window(
+                item_id=win["item_id"],
+                window_id=win["window_id"],
+                y_train=win["y_train"],
+                y_test=win["y_test"],
+                test_timestamps=win["test_timestamps"],
+                season_length=season_length,
+                model_name=model_name,
+            )
         all_forecast_dfs.append(df_w)
         all_metric_rows.append(m_w)
 
     runtime_s = time.perf_counter() - t0
     ram_after = proc.memory_info().rss / (1024 * 1024)
     peak_ram_mb = max(ram_before, ram_after)
-    # TDP-based CPU estimate: 45W nominal package power during single-core active compute
     energy_kwh = (runtime_s * 15.0) / 3_600_000.0
 
     full_forecast_df = pd.concat(all_forecast_dfs, ignore_index=True)
@@ -301,7 +409,7 @@ def run_classical_on_dataset(
         full_forecast_df,
         parquet_path,
         model_id=model_name,
-        package_versions={"statsforecast": "1.7+", "statsmodels": "0.14+"},
+        package_versions={"statsforecast": "2.0.1", "statsmodels": "0.15.0"},
         device="cpu",
         seed=seed,
         context_length=int(np.median([len(w["y_train"]) for w in windows])),
@@ -315,3 +423,4 @@ def run_classical_on_dataset(
         extra_meta={"dataset_config": dataset_config, "season_length": season_length},
     )
     return full_forecast_df, metrics_df
+
