@@ -1,0 +1,8 @@
+feature,vif,keep_under_vif_10
+trend_strength,2.617639270471802,True
+seasonal_strength,1.6442660183566369,True
+forecastability,2.2780092503867713,True
+hurst,1.7057124815300129,True
+stability,3.329871181162941,True
+lumpiness,1.4098314545042177,True
+log_length,1.5957792821067829,True

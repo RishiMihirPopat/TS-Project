@@ -63,3 +63,20 @@ This document explains every module in `src/tsdomain/` and `seed/` in plain lang
   2. Computes `best_classical` across all 97 GIFT-Eval leaderboard configurations (`results/metrics/best_classical_leaderboard.parquet`) as $\min(\text{MASE}_{\text{Seasonal\_Naive}}, \text{MASE}_{\text{Auto\_ETS}}, \text{MASE}_{\text{Auto\_Theta}}, \text{MASE}_{\text{Auto\_Arima}})$.
   3. Runs `Naive`, `SeasonalNaive`, `Drift`, `AutoETS`, `AutoTheta`, and `AutoARIMA` across the 13 local benchmark configurations (11 stratified GIFT-Eval configs + `unseen_mandi/W/short` + `unseen_recency/D/short`), writing canonical forecast parquets (`results/forecasts/{model}/{config}.parquet`), `.meta.json` sidecars, and `results/metrics/best_classical_local.parquet`.
 - **Why it exists:** Establishes the verified classical baseline denominator ($\text{MASE}_{\text{best\_classical}}$) required for `log_ratio` in Phase 6 and Pareto efficiency in Phase 9.
+
+---
+
+## Phase 3 — Meta-Features and Domain Similarity
+
+### 9. `src/tsdomain/features/meta_features.py`
+- **What it does:** Computes per-series structural meta-features and aggregates them via median to configuration level (`results/features/dataset_features.parquet`).
+- **Formulas implemented:**
+  - **STL Trend & Seasonal Strength (Hyndman & Athanasopoulos, FPP3 §4.3):**
+    $$F_T = \max\left(0, 1 - \frac{\text{Var}(R_t)}{\text{Var}(T_t + R_t)}\right), \quad F_S = \max\left(0, 1 - \frac{\text{Var}(R_t)}{\text{Var}(S_t + R_t)}\right)$$
+  - **Normalized Spectral Entropy & Forecastability (Goerg, 2013):**
+    $$H_s(x) = -\frac{1}{\log_2 K}\sum_{k=1}^K P(\omega_k)\log_2 P(\omega_k) \in [0, 1], \quad \text{forecastability} = 1 - H_s(x)$$
+  - **Hurst Exponent (`hurst`):** Rescaled range ($R/S$) regression slope $\log(R/S)_k \sim H \log(k)$ across log-spaced window sizes $k$.
+  - **Stability & Lumpiness (`tsfeatures`):** Variance of non-overlapping window means ($\text{stability}$) and window variances ($\text{lumpiness}$) on z-scored series.
+
+### 10. `src/tsdomain/features/similarity.py` & `run_features.py`
+- **What they do:** Map each `(model, config)` pair to categorical pretraining exposure (`domain_in_pretraining` $\in \{\text{true}, \text{false}, \text{unknown}\}$, plus optimistic/conservative codings) and continuous standardized feature-space distance (`sim_distance` via regularized Mahalanobis distance and `sim_distance_knn` via 3-NN Euclidean distance, leaving out the target `base_dataset`), alongside correlation and VIF diagnostics (`results/features/vif_report.csv`).

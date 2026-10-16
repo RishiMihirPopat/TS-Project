@@ -40,3 +40,12 @@ All non-obvious engineering, methodological, and external-fact decisions are rec
 9. **Batched `StatsForecast` Execution & `season_length` Cap for `AutoETS`/`AutoARIMA`:**
    - *Context:* `StatsForecast`'s `AutoETS` supports `season_length <= 24`, and state-space `AutoARIMA` with `m = 52` creates large companion matrices.
    - *Decision:* In `run_classical_on_dataset()`, all windows of a configuration are batched into a single vectorized `StatsForecast.forecast()` call, and `season_length` is passed as `m` when `m <= 24` (and `1` when `m > 24`) for `AutoETS` and `AutoARIMA`, while `SeasonalNaive` and `AutoTheta` (which uses classical seasonal decomposition) retain the full `m` (e.g. `52` on `unseen_mandi/W/short`).
+
+## 2026-10-16 — Phase 3: Meta-Features and Pretraining Domain Similarity
+
+10. **Meta-Feature Extraction Across All 97 GIFT-Eval Configs + 2 Unseen Configs (`src/tsdomain/features/run_features.py`):**
+    - *Context:* To maximize statistical power in Phase 6 mixed-effects models (`M0 → M1 → M2 → M3`), we need configuration-level meta-features across all 97 GIFT-Eval configurations as well as both unseen datasets.
+    - *Decision:* Download and cache all 45 GIFT-Eval Arrow subdirectories $\le 16.5\text{ MB}$ (covering 20 of the 23 base datasets directly from raw series). For high-frequency configurations whose raw Arrow shard exceeds $16.5\text{ MB}$ (e.g., `electricity/15T` at $594\text{ MB}$, `bitbrains_fast_storage/5T` at $288\text{ MB}$), compute features from the same base dataset's cached hourly/daily shard (`base_dataset_shard`) or domain proxy (`domain_proxy_shard`) and record `feature_source` explicitly in `dataset_features.parquet`.
+11. **Leave-One-Base-Dataset-Out Reference Pool in `sim_distance` (`src/tsdomain/features/similarity.py`):**
+    - *Context:* If an in-domain test dataset $d$ is included in its own reference pool $\mathcal{R}_m$, its distance to the nearest reference dataset is trivially zero, artificially inflating the separation between in-domain and out-of-domain datasets.
+    - *Decision:* When computing continuous `sim_distance` (regularized Mahalanobis distance with ridge $\lambda = 0.25I$) and `sim_distance_knn` ($k = 3$ nearest reference base datasets), we exclude all configurations belonging to the test dataset's own `base_dataset` from $\mathcal{R}_m$.
