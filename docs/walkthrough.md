@@ -30,3 +30,25 @@ This document explains every module in `src/tsdomain/` and `seed/` in plain lang
 ### 3. `src/tsdomain/baselines/classical.py`
 - **What it does:** Wraps both `statsforecast` (`SeasonalNaive`, `Naive`, `RandomWalkWithDrift`, `AutoETS`, `AutoTheta`, `AutoARIMA`) and the exact `statsmodels` reference specifications (`ETS(A_d,M)`, `Theta(12)`, `SARIMA(1,1,1)(1,1,1)_12`) behind a unified rolling-window interface that outputs canonical forecast `.parquet` files and `.meta.json` sidecars.
 - **Why it exists:** Provides the mandatory classical denominator ($\text{MASE}_{\text{best\_classical}}$) across all benchmark datasets while maintaining exact regression compatibility with Phase 0.
+
+---
+
+## Phase 1 — Data Acquisition, Leaderboard Ingestion, and Registry
+
+### 4. `src/tsdomain/config.py`
+- **What it does:** Validates `configs/datasets.yaml`, `configs/models.yaml`, `configs/pretraining_registry.yaml`, and `configs/experiment.yaml` using Pydantic v2 models and resolves `inherits_from` links across model family checkpoints.
+- **Why it exists:** Prevents silent typos in dataset identifiers, horizons, or domain coverage claims.
+
+### 5. `src/tsdomain/data/leaderboard.py`
+- **What it does:** Downloads `all_results.csv` and `config.json` for 24 statistical, deep-learning (`PatchTST`, `N-BEATS`, `DLinear`, `TFT`), and foundation models (`Chronos`, `Chronos-Bolt`, `Chronos-2`, `Moirai`, `Moirai2`, `TimesFM`, `TTM`) from `SalesforceAIResearch/gift-eval` and consolidates them into `results/metrics/leaderboard.parquet`.
+- **Why it exists:** Supplies the 97-configuration benchmark results and `test_data_leakage_flag` indicators required for Phase 2 cross-checks, Phase 6 hierarchical modeling, and Phase 8 leakage ablations.
+
+### 6. `src/tsdomain/data/gift_eval.py`
+- **What it does:** Downloads Hugging Face Arrow shards from `Salesforce/GiftEval`, flattens multivariate series into univariate `item_id_dim{k}` series (`MultivariateToUnivariate`), and constructs rolling evaluation windows matching `src/gift_eval/data.py` (`TEST_SPLIT = 0.1`, `MAX_WINDOW = 20`).
+- **Why it exists:** Ensures local classical and TSFM evaluations use the exact GIFT-Eval horizon and windowing rules.
+
+### 7. `src/tsdomain/data/unseen_mandi.py`, `unseen_recency.py`, & `finance.py`
+- **What they do:** Build the two unseen benchmark datasets (`unseen_mandi` with 60 weekly Indian agricultural mandi price series over 2012–2016; `unseen_recency` with 60 daily post-cutoff 2025–2026 meteorological series) and the S&P 500 daily OHLC + Garman–Klass volatility dataset (`spx_daily.parquet`, 1990–2026).
+- **Formulas implemented:**
+  - **Garman–Klass (1980) daily variance:**
+    $$\sigma^2_{\text{GK}, t} = \frac{1}{2}\left(\ln\frac{H_t}{L_t}\right)^2 - (2\ln 2 - 1)\left(\ln\frac{C_t}{O_t}\right)^2$$

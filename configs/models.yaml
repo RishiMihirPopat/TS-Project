@@ -1,0 +1,115 @@
+# Model Configuration Registry (configs/models.yaml)
+
+models:
+  # --- Classical Baselines (Phase 2) ---
+  - model_id: "Naive"
+    family: "classical"
+    package: "statsforecast"
+    checkpoint_id: null
+    context_length: 512
+    device: "cpu"
+    quantiles: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    tier: "P0"
+
+  - model_id: "SeasonalNaive"
+    family: "classical"
+    package: "statsforecast"
+    checkpoint_id: null
+    context_length: 512
+    device: "cpu"
+    quantiles: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    tier: "P0"
+
+  - model_id: "Drift"
+    family: "classical"
+    package: "statsforecast"
+    checkpoint_id: null
+    context_length: 512
+    device: "cpu"
+    quantiles: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    tier: "P0"
+
+  - model_id: "AutoETS"
+    family: "classical"
+    package: "statsforecast"
+    checkpoint_id: null
+    context_length: 512
+    device: "cpu"
+    quantiles: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    tier: "P0"
+
+  - model_id: "AutoTheta"
+    family: "classical"
+    package: "statsforecast"
+    checkpoint_id: null
+    context_length: 512
+    device: "cpu"
+    quantiles: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    tier: "P0"
+
+  - model_id: "AutoARIMA"
+    family: "classical"
+    package: "statsforecast"
+    checkpoint_id: null
+    context_length: 512
+    device: "cpu"
+    quantiles: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    tier: "P0"
+
+  # --- Time-Series Foundation Models (Phase 4 P0 + P1) ---
+  - model_id: "Chronos_small"
+    family: "chronos"
+    package: "chronos-forecasting"
+    checkpoint_id: "amazon/chronos-t5-small"
+    leaderboard_name: "Chronos_small"
+    env_file: "envs/chronos.txt"
+    context_length: 512
+    device: "auto"
+    quantiles: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    param_count: 46000000
+    tier: "P0"
+
+  - model_id: "Moirai_small"
+    family: "moirai"
+    package: "uni2ts"
+    checkpoint_id: "Salesforce/moirai-1.1-R-small"
+    leaderboard_name: "Moirai_small"
+    env_file: "envs/moirai.txt"
+    context_length: 512
+    device: "auto"
+    quantiles: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    param_count: 14000000
+    tier: "P0"
+
+  - model_id: "TimesFM"
+    family: "timesfm"
+    package: "timesfm"
+    checkpoint_id: "google/timesfm-1.0-200m-pytorch"
+    leaderboard_name: "TimesFM"
+    env_file: "envs/timesfm.txt"
+    context_length: 512
+    device: "auto"
+    quantiles: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    param_count: 200000000
+    tier: "P0"
+
+  - model_id: "TTM-R2-Pretrained"
+    family: "ttm"
+    package: "granite-tsfm"
+    checkpoint_id: "ibm-granite/granite-timeseries-ttm-r2"
+    leaderboard_name: "TTM-R2-Pretrained"
+    env_file: "envs/ttm.txt"
+    context_length: 512
+    device: "auto"
+    quantiles: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    param_count: 1000000
+    tier: "P1"
+
+  - model_id: "LightGBM"
+    family: "ml"
+    package: "lightgbm"
+    checkpoint_id: null
+    context_length: 512
+    device: "cpu"
+    quantiles: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    tier: "P1"

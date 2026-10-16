@@ -1,0 +1,60 @@
+# Experiment Protocol Configuration (configs/experiment.yaml)
+
+seed: 42
+context_length: 512
+max_series_per_config: 60
+max_windows_per_series: 2
+meta_feature_max_series: 100
+profile_repeats: 3
+profile_warmup: 1
+quantiles: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+
+# Stratified GIFT-Eval Subset (11 configs across all 7 domains) + 2 Unseen Datasets = 13 local run configs
+local_eval_configs:
+  - "m4_monthly/M/short"
+  - "m4_quarterly/Q/short"
+  - "ett1/D/short"
+  - "solar/W/short"
+  - "hospital/M/short"
+  - "us_births/M/short"
+  - "saugeen/W/short"
+  - "jena_weather/D/short"
+  - "hierarchical_sales/W/short"
+  - "loop_seattle/D/short"
+  - "bizitobs_l2c/H/short"
+  - "unseen_mandi/W/short"
+  - "unseen_recency/D/short"
+
+# Configs used in Phase 2 GIFT-Eval Seasonal_Naive leaderboard parity check
+leaderboard_crosscheck_configs:
+  - "hospital/M/short"
+  - "us_births/M/short"
+  - "saugeen/W/short"
+  - "solar/W/short"
+
+# Required leaderboard models to ingest in Phase 1b
+leaderboard_models:
+  - "Naive"
+  - "Seasonal_Naive"
+  - "Auto_Arima"
+  - "Auto_ETS"
+  - "Auto_Theta"
+  - "PatchTST"
+  - "N-BEATS"
+  - "DLinear"
+  - "TFT"
+  - "Chronos_small"
+  - "Chronos_base"
+  - "Chronos_large"
+  - "chronos_bolt_small"
+  - "chronos_bolt_base"
+  - "Chronos-2"
+  - "Moirai_small"
+  - "Moirai_base"
+  - "Moirai_large"
+  - "Moirai2"
+  - "TimesFM"
+  - "timesfm_2_0_500m"
+  - "TimesFM-2.5"
+  - "TTM-R1-Pretrained"
+  - "TTM-R2-Pretrained"

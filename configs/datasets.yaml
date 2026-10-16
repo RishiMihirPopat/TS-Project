@@ -1,0 +1,196 @@
+# Dataset Configuration Registry (configs/datasets.yaml)
+# Every benchmark dataset: source, path, freq, horizon(s), domain label, season length, licence.
+
+datasets:
+  # --- Stratified GIFT-Eval Subset (10 configurations spanning all 7 GIFT-Eval domains) ---
+  - config: "m4_monthly/M/short"
+    base_dataset: "m4_monthly"
+    source: "Salesforce/GiftEval"
+    hf_subdir: "m4_monthly"
+    domain: "Econ/Fin"
+    freq: "M"
+    frequency_group: "monthly"
+    term: "short"
+    horizon: 18
+    season_length: 12
+    source_url: "https://huggingface.co/datasets/Salesforce/GiftEval"
+    licence: "CC-BY-4.0 (M4 Competition / Monash Forecasting Repository)"
+    retrieval_date: "2026-10-16"
+
+  - config: "m4_quarterly/Q/short"
+    base_dataset: "m4_quarterly"
+    source: "Salesforce/GiftEval"
+    hf_subdir: "m4_quarterly"
+    domain: "Econ/Fin"
+    freq: "Q"
+    frequency_group: "quarterly"
+    term: "short"
+    horizon: 8
+    season_length: 4
+    source_url: "https://huggingface.co/datasets/Salesforce/GiftEval"
+    licence: "CC-BY-4.0 (M4 Competition / Monash Forecasting Repository)"
+    retrieval_date: "2026-10-16"
+
+  - config: "ett1/D/short"
+    base_dataset: "ett1"
+    source: "Salesforce/GiftEval"
+    hf_subdir: "ett1/D"
+    domain: "Energy"
+    freq: "D"
+    frequency_group: "daily"
+    term: "short"
+    horizon: 30
+    season_length: 1
+    stl_period: 7
+    source_url: "https://huggingface.co/datasets/Salesforce/GiftEval"
+    licence: "Apache-2.0 (ETDataset Zhou et al., 2021)"
+    retrieval_date: "2026-10-16"
+
+  - config: "solar/W/short"
+    base_dataset: "solar"
+    source: "Salesforce/GiftEval"
+    hf_subdir: "solar/W"
+    domain: "Energy"
+    freq: "W"
+    frequency_group: "weekly"
+    term: "short"
+    horizon: 8
+    season_length: 1
+    stl_period: 52
+    source_url: "https://huggingface.co/datasets/Salesforce/GiftEval"
+    licence: "CC-BY-4.0 (NREL Solar Power Data)"
+    retrieval_date: "2026-10-16"
+
+  - config: "hospital/M/short"
+    base_dataset: "hospital"
+    source: "Salesforce/GiftEval"
+    hf_subdir: "hospital"
+    domain: "Healthcare"
+    freq: "M"
+    frequency_group: "monthly"
+    term: "short"
+    horizon: 12
+    season_length: 12
+    source_url: "https://huggingface.co/datasets/Salesforce/GiftEval"
+    licence: "CC-BY-4.0 (expsmooth / Monash Healthcare)"
+    retrieval_date: "2026-10-16"
+
+  - config: "us_births/M/short"
+    base_dataset: "us_births"
+    source: "Salesforce/GiftEval"
+    hf_subdir: "us_births/M"
+    domain: "Healthcare"
+    freq: "M"
+    frequency_group: "monthly"
+    term: "short"
+    horizon: 12
+    season_length: 12
+    source_url: "https://huggingface.co/datasets/Salesforce/GiftEval"
+    licence: "CC-BY-4.0 (Monash US Births)"
+    retrieval_date: "2026-10-16"
+
+  - config: "saugeen/W/short"
+    base_dataset: "saugeen"
+    source: "Salesforce/GiftEval"
+    hf_subdir: "saugeenday/W"
+    domain: "Nature"
+    freq: "W"
+    frequency_group: "weekly"
+    term: "short"
+    horizon: 8
+    season_length: 1
+    stl_period: 52
+    source_url: "https://huggingface.co/datasets/Salesforce/GiftEval"
+    licence: "CC-BY-4.0 (Saugeen River Flow)"
+    retrieval_date: "2026-10-16"
+
+  - config: "jena_weather/D/short"
+    base_dataset: "jena_weather"
+    source: "Salesforce/GiftEval"
+    hf_subdir: "jena_weather/D"
+    domain: "Nature"
+    freq: "D"
+    frequency_group: "daily"
+    term: "short"
+    horizon: 30
+    season_length: 1
+    stl_period: 7
+    source_url: "https://huggingface.co/datasets/Salesforce/GiftEval"
+    licence: "CC-BY-4.0 (Max Planck Biogeochemistry Jena Weather)"
+    retrieval_date: "2026-10-16"
+
+  - config: "hierarchical_sales/W/short"
+    base_dataset: "hierarchical_sales"
+    source: "Salesforce/GiftEval"
+    hf_subdir: "hierarchical_sales/W"
+    domain: "Sales"
+    freq: "W"
+    frequency_group: "weekly"
+    term: "short"
+    horizon: 8
+    season_length: 1
+    stl_period: 52
+    source_url: "https://huggingface.co/datasets/Salesforce/GiftEval"
+    licence: "CC-BY-4.0 (Hierarchical Retail Sales)"
+    retrieval_date: "2026-10-16"
+
+  - config: "loop_seattle/D/short"
+    base_dataset: "loop_seattle"
+    source: "Salesforce/GiftEval"
+    hf_subdir: "LOOP_SEATTLE/D"
+    domain: "Transport"
+    freq: "D"
+    frequency_group: "daily"
+    term: "short"
+    horizon: 30
+    season_length: 1
+    stl_period: 7
+    source_url: "https://huggingface.co/datasets/Salesforce/GiftEval"
+    licence: "MIT (Seattle Loop Detector Traffic)"
+    retrieval_date: "2026-10-16"
+
+  - config: "bizitobs_l2c/H/short"
+    base_dataset: "bizitobs_l2c"
+    source: "Salesforce/GiftEval"
+    hf_subdir: "bizitobs_l2c/H"
+    domain: "Web/CloudOps"
+    freq: "H"
+    frequency_group: "hourly"
+    term: "short"
+    horizon: 48
+    season_length: 24
+    source_url: "https://huggingface.co/datasets/Salesforce/GiftEval"
+    licence: "Apache-2.0 (BizITObs IT Operations Telemetry)"
+    retrieval_date: "2026-10-16"
+
+  # --- Unseen Dataset 1: Out-of-Domain (Indian Agricultural Mandi Commodity Prices) ---
+  - config: "unseen_mandi/W/short"
+    base_dataset: "unseen_mandi"
+    source: "Agmarknet (iancovert/Agmarknet)"
+    local_path: "data/processed/unseen_mandi.parquet"
+    domain: "Agriculture/Mandi"
+    freq: "W"
+    frequency_group: "weekly"
+    term: "short"
+    horizon: 8
+    season_length: 52
+    stl_period: 52
+    source_url: "https://github.com/iancovert/Agmarknet"
+    licence: "Government of India Open Data License (GODL-India) / Academic Research"
+    retrieval_date: "2026-10-16"
+
+  # --- Unseen Dataset 2: Post-Cutoff Recency Stratum (2025-2026 Open-Meteo Daily) ---
+  - config: "unseen_recency/D/short"
+    base_dataset: "unseen_recency"
+    source: "Open-Meteo ERA5 Post-Cutoff (2025-2026)"
+    local_path: "data/processed/unseen_recency.parquet"
+    domain: "Nature/PostCutoff2025"
+    freq: "D"
+    frequency_group: "daily"
+    term: "short"
+    horizon: 30
+    season_length: 7
+    stl_period: 7
+    source_url: "https://archive-api.open-meteo.com/v1/archive"
+    licence: "CC-BY-4.0 (Open-Meteo / Copernicus ERA5)"
+    retrieval_date: "2026-10-16"

@@ -1,0 +1,314 @@
+# Pretraining Exposure & Domain Registry (configs/pretraining_registry.yaml)
+# Every claim records source_url and verified: true|false (Phase 1e & Section 7).
+
+models:
+  Chronos_small:
+    checkpoint_id: "amazon/chronos-t5-small"
+    family: "chronos_t5"
+    pretraining_corpus_name: "Chronos Pretraining Corpus + TSMixup + KernelSynth"
+    training_cutoff: "2024-03"
+    finance_included: false
+    agriculture_mandi_included: false
+    domains_covered:
+      Energy:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://arxiv.org/abs/2403.07815"
+        notes: "Table 1 / Appendix A includes Electricity, Solar, Wind, ETT, Spanish Energy."
+      Transport:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://arxiv.org/abs/2403.07815"
+        notes: "Includes Uber TLC, San Francisco Traffic, Pedestrian Counts, Taxi."
+      Nature:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://arxiv.org/abs/2403.07815"
+        notes: "Includes ERA5 weather, KDD Cup air quality, Temperature/Rain, Saugeen."
+      Sales:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://arxiv.org/abs/2403.07815"
+        notes: "Includes Favorita, M5, Dominick retail sales."
+      Web/CloudOps:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://arxiv.org/abs/2403.07815"
+        notes: "Includes Wiki Daily/Rolling, Alibaba cluster trace, Azure VM traces."
+      Healthcare:
+        in_pretraining: "false"
+        verified: true
+        source_url: "https://arxiv.org/abs/2403.07815"
+        notes: "Hospital, COVID Deaths, and US Births were held out strictly in Benchmark II (zero-shot evaluation)."
+      Econ/Fin:
+        in_pretraining: "false"
+        verified: true
+        source_url: "https://arxiv.org/abs/2403.07815"
+        notes: "Chronos T5 explicitly excluded financial market & M4 macro/finance series from pretraining (confirmed in Ansari et al., 2024 and Marconi, 2025)."
+      Agriculture/Mandi:
+        in_pretraining: "false"
+        verified: true
+        source_url: "https://huggingface.co/datasets/Viharikvs/TFSMAG"
+        notes: "Wholesale Indian mandi commodity series absent from Chronos corpus."
+      Nature/PostCutoff2025:
+        in_pretraining: "false"
+        verified: true
+        source_url: "https://huggingface.co/amazon/chronos-t5-small"
+        notes: "Checkpoint published March 2024; 2025-2026 observations are strictly post-cutoff."
+
+  Chronos_base:
+    inherits_from: "Chronos_small"
+    checkpoint_id: "amazon/chronos-t5-base"
+    training_cutoff: "2024-03"
+    finance_included: false
+
+  Chronos_large:
+    inherits_from: "Chronos_small"
+    checkpoint_id: "amazon/chronos-t5-large"
+    training_cutoff: "2024-03"
+    finance_included: false
+
+  chronos_bolt_small:
+    inherits_from: "Chronos_small"
+    checkpoint_id: "amazon/chronos-bolt-small"
+    training_cutoff: "2024-11"
+    finance_included: false
+
+  chronos_bolt_base:
+    inherits_from: "Chronos_small"
+    checkpoint_id: "amazon/chronos-bolt-base"
+    training_cutoff: "2024-11"
+    finance_included: false
+
+  Chronos-2:
+    checkpoint_id: "amazon/chronos-2"
+    family: "chronos_2"
+    pretraining_corpus_name: "Chronos-2 Expanded Corpus + GiftEvalPretrain"
+    training_cutoff: "2025-02"
+    finance_included: true
+    agriculture_mandi_included: false
+    domains_covered:
+      Energy:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://github.com/SalesforceAIResearch/gift-eval/tree/main/results/Chronos-2"
+      Transport:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://github.com/SalesforceAIResearch/gift-eval/tree/main/results/Chronos-2"
+      Nature:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://github.com/SalesforceAIResearch/gift-eval/tree/main/results/Chronos-2"
+      Sales:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://github.com/SalesforceAIResearch/gift-eval/tree/main/results/Chronos-2"
+      Web/CloudOps:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://github.com/SalesforceAIResearch/gift-eval/tree/main/results/Chronos-2"
+      Healthcare:
+        in_pretraining: "true"
+        verified: false
+        source_url: "https://huggingface.co/datasets/Salesforce/GiftEvalPretrain"
+      Econ/Fin:
+        in_pretraining: "true"
+        verified: false
+        source_url: "https://huggingface.co/datasets/Salesforce/GiftEvalPretrain"
+      Agriculture/Mandi:
+        in_pretraining: "false"
+        verified: true
+        source_url: "https://huggingface.co/datasets/Viharikvs/TFSMAG"
+      Nature/PostCutoff2025:
+        in_pretraining: "false"
+        verified: true
+        source_url: "https://github.com/SalesforceAIResearch/gift-eval/tree/main/results/Chronos-2"
+
+  Moirai_small:
+    checkpoint_id: "Salesforce/moirai-1.1-R-small"
+    family: "moirai"
+    pretraining_corpus_name: "LOTSA (Large Open Time Series Archive, 27B observations)"
+    training_cutoff: "2024-06"
+    finance_included: true
+    agriculture_mandi_included: false
+    domains_covered:
+      Energy:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://arxiv.org/abs/2402.02592"
+        notes: "LOTSA includes buildings, electricity, solar, wind, smart meters (largest share of LOTSA)."
+      Transport:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://arxiv.org/abs/2402.02592"
+        notes: "LOTSA includes PEMS, Traffic, Loop Seattle, Taxi, Rideshare."
+      Nature:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://arxiv.org/abs/2402.02592"
+        notes: "LOTSA Climate/Weather & Nature slices (ERA5, CMIP6, Air Quality)."
+      Sales:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://arxiv.org/abs/2402.02592"
+        notes: "LOTSA Sales domain (Favorita, M5, Store Sales)."
+      Web/CloudOps:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://arxiv.org/abs/2402.02592"
+        notes: "LOTSA CloudOps/Web domain (Azure VM, Borg, Alibaba, Wiki)."
+      Healthcare:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://arxiv.org/abs/2402.02592"
+        notes: "LOTSA Healthcare domain (CDC Flu, COVID-19, PhysioNet)."
+      Econ/Fin:
+        in_pretraining: "true"
+        verified: false
+        source_url: "https://arxiv.org/abs/2402.02592"
+        notes: "LOTSA includes Econ/Fin (FRED macro, Bitcoin, Exchange Rate), though exact equity OHLC volatility overlap is marked verified: false for manual review."
+      Agriculture/Mandi:
+        in_pretraining: "false"
+        verified: true
+        source_url: "https://huggingface.co/datasets/Viharikvs/TFSMAG"
+        notes: "LOTSA contains zero Indian mandi agricultural commodity price series."
+      Nature/PostCutoff2025:
+        in_pretraining: "false"
+        verified: true
+        source_url: "https://huggingface.co/Salesforce/moirai-1.1-R-small"
+        notes: "Moirai 1.1 released June 2024; 2025-2026 observations are strictly post-cutoff."
+
+  Moirai_base:
+    inherits_from: "Moirai_small"
+    checkpoint_id: "Salesforce/moirai-1.1-R-base"
+    training_cutoff: "2024-06"
+    finance_included: true
+
+  Moirai_large:
+    inherits_from: "Moirai_small"
+    checkpoint_id: "Salesforce/moirai-1.1-R-large"
+    training_cutoff: "2024-06"
+    finance_included: true
+
+  Moirai2:
+    inherits_from: "Moirai_small"
+    checkpoint_id: "Salesforce/moirai-2.0-R-small"
+    training_cutoff: "2025-05"
+    finance_included: true
+
+  TimesFM:
+    checkpoint_id: "google/timesfm-1.0-200m-pytorch"
+    family: "timesfm"
+    pretraining_corpus_name: "Google Trends + Wiki Pageviews + Public Benchmarks + Synthetic"
+    training_cutoff: "2024-04"
+    finance_included: false
+    agriculture_mandi_included: false
+    domains_covered:
+      Energy:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://arxiv.org/abs/2310.10688"
+        notes: "Trained on Electricity, ETT, Solar."
+      Transport:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://arxiv.org/abs/2310.10688"
+        notes: "Trained on Traffic and public transport series."
+      Nature:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://arxiv.org/abs/2310.10688"
+        notes: "Trained on Weather and environmental series."
+      Sales:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://arxiv.org/abs/2310.10688"
+        notes: "Trained on M5/Favorita retail demand."
+      Web/CloudOps:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://arxiv.org/abs/2310.10688"
+        notes: "Heavily weighted toward Wiki Pageviews (100B+ points) and Google Trends."
+      Healthcare:
+        in_pretraining: "unknown"
+        verified: false
+        source_url: "https://arxiv.org/abs/2310.10688"
+        notes: "Google Trends queries may include health terms, but clinical/hospital registries were not explicitly listed."
+      Econ/Fin:
+        in_pretraining: "unknown"
+        verified: false
+        source_url: "https://arxiv.org/abs/2310.10688"
+        notes: "M4 was included in parts of TimesFM pretraining (marked leaking in GIFT-Eval), while raw financial asset prices were not documented."
+      Agriculture/Mandi:
+        in_pretraining: "false"
+        verified: true
+        source_url: "https://huggingface.co/datasets/Viharikvs/TFSMAG"
+      Nature/PostCutoff2025:
+        in_pretraining: "false"
+        verified: true
+        source_url: "https://huggingface.co/google/timesfm-1.0-200m-pytorch"
+
+  timesfm_2_0_500m:
+    inherits_from: "TimesFM"
+    checkpoint_id: "google/timesfm-2.0-500m-pytorch"
+    training_cutoff: "2024-12"
+    finance_included: false
+
+  TimesFM-2.5:
+    inherits_from: "TimesFM"
+    checkpoint_id: "google/timesfm-2.5-200m-pytorch"
+    training_cutoff: "2025-04"
+    finance_included: false
+
+  TTM-R1-Pretrained:
+    checkpoint_id: "ibm-granite/granite-timeseries-ttm-r1"
+    family: "ttm"
+    pretraining_corpus_name: "Monash + LibTS Non-Leaking Subset (~244M-1B points)"
+    training_cutoff: "2024-04"
+    finance_included: false
+    agriculture_mandi_included: false
+    domains_covered:
+      Energy:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://arxiv.org/abs/2401.03955"
+      Transport:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://arxiv.org/abs/2401.03955"
+      Nature:
+        in_pretraining: "true"
+        verified: true
+        source_url: "https://arxiv.org/abs/2401.03955"
+      Sales:
+        in_pretraining: "false"
+        verified: false
+        source_url: "https://arxiv.org/abs/2401.03955"
+      Web/CloudOps:
+        in_pretraining: "true"
+        verified: false
+        source_url: "https://arxiv.org/abs/2401.03955"
+      Healthcare:
+        in_pretraining: "false"
+        verified: false
+        source_url: "https://arxiv.org/abs/2401.03955"
+      Econ/Fin:
+        in_pretraining: "false"
+        verified: true
+        source_url: "https://arxiv.org/abs/2401.03955"
+        notes: "Marconi (2025) notes TTM pretraining excluded financial market yields/volatility."
+      Agriculture/Mandi:
+        in_pretraining: "false"
+        verified: true
+        source_url: "https://huggingface.co/datasets/Viharikvs/TFSMAG"
+      Nature/PostCutoff2025:
+        in_pretraining: "false"
+        verified: true
+        source_url: "https://huggingface.co/ibm-granite/granite-timeseries-ttm-r2"
+
+  TTM-R2-Pretrained:
+    inherits_from: "TTM-R1-Pretrained"
+    checkpoint_id: "ibm-granite/granite-timeseries-ttm-r2"
+    training_cutoff: "2024-10"
+    finance_included: false
