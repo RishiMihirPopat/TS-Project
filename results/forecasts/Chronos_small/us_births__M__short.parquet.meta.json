@@ -1,0 +1,40 @@
+{
+  "model_id": "Chronos_small",
+  "package_versions": {
+    "torch": "2.14.1+cpu"
+  },
+  "device": "cpu",
+  "seed": 20260410,
+  "context_length": 512,
+  "n_series": 1,
+  "n_windows": 2,
+  "runtime_s": 0.9659078999975463,
+  "peak_ram_mb": 1173.91015625,
+  "peak_gpu_mb": 0.0,
+  "energy_kwh": 1.2073848749969328e-05,
+  "energy_method": "TDP_estimate",
+  "timestamp_utc": "2026-10-16T08:59:43.772072+00:00",
+  "platform": "Windows-10-10.0.26300-SP0",
+  "dataset_config": "us_births/M/short",
+  "checkpoint_id": "amazon/chronos-t5-small",
+  "param_count": 46154240,
+  "scaling_mode": "common_zscore",
+  "compute_summary": {
+    "model": "Chronos_small",
+    "config": "us_births/M/short",
+    "param_count": 46154240,
+    "device": "cpu",
+    "load_time_s": 1.0972584999981336,
+    "infer_time_s_total": 0.9659078999975463,
+    "infer_time_std_s": 0.03851214139120338,
+    "infer_time_ms_per_point": 40.246162499897764,
+    "infer_time_iqr_ms": 1.4852937498896353,
+    "peak_ram_mb": 1173.91015625,
+    "peak_vram_mb": 0.0,
+    "energy_wh_total": 0.012073848749969328,
+    "energy_mwh_per_1k_points": 503.077031248722,
+    "energy_source": "TDP_estimate",
+    "n_forecast_points": 24,
+    "n_repeats": 3
+  }
+}

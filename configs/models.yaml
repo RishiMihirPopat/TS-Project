@@ -84,13 +84,13 @@ models:
   - model_id: "TimesFM"
     family: "timesfm"
     package: "timesfm"
-    checkpoint_id: "google/timesfm-1.0-200m-pytorch"
+    checkpoint_id: "google/timesfm-2.5-200m-pytorch"
     leaderboard_name: "TimesFM"
     env_file: "envs/timesfm.txt"
     context_length: 512
     device: "auto"
     quantiles: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-    param_count: 200000000
+    param_count: 231289280
     tier: "P0"
 
   - model_id: "TTM-R2-Pretrained"

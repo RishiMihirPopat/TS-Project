@@ -1,0 +1,38 @@
+{
+  "model_id": "LightGBM",
+  "package_versions": {
+    "torch": "2.14.1+cpu"
+  },
+  "device": "cpu",
+  "seed": 20260410,
+  "context_length": 512,
+  "n_series": 60,
+  "n_windows": 120,
+  "runtime_s": 9.84078799999952,
+  "peak_ram_mb": 581.6953125,
+  "peak_gpu_mb": 0.0,
+  "energy_kwh": 0.00012300984999999402,
+  "energy_method": "TDP_estimate",
+  "timestamp_utc": "2026-10-19T09:25:09.123466+00:00",
+  "platform": "Windows-10-10.0.26300-SP0",
+  "dataset_config": "loop_seattle/D/short",
+  "budget_parity_target_s": 2.9161132000008365,
+  "compute_summary": {
+    "model": "LightGBM",
+    "config": "loop_seattle/D/short",
+    "param_count": 15000,
+    "device": "cpu",
+    "load_time_s": 0.0,
+    "infer_time_s_total": 9.84078799999952,
+    "infer_time_std_s": 0.0,
+    "infer_time_ms_per_point": 2.733552222222089,
+    "infer_time_iqr_ms": 0.0,
+    "peak_ram_mb": 581.6953125,
+    "peak_vram_mb": 0.0,
+    "energy_wh_total": 0.12300984999999402,
+    "energy_mwh_per_1k_points": 34.16940277777612,
+    "energy_source": "TDP_estimate",
+    "n_forecast_points": 3600,
+    "n_repeats": 1
+  }
+}

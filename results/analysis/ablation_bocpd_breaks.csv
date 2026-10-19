@@ -1,0 +1,7 @@
+event_label,labelled_date,pelt_detected_date,pelt_distance_days,pelt_recovered_30d,bocpd_detected_date,bocpd_distance_days,bocpd_recovered_30d
+Asian_Financial_Crisis_MiniCrash,1997-10-27,1998-02-09,71,False,1997-10-09,12,True
+Sept11_Market_Reopening,2001-09-17,2001-09-04,5,True,2001-09-20,3,True
+Lehman_Brothers_GFC,2008-09-15,2008-09-08,5,True,2008-09-22,5,True
+US_Debt_Downgrade_Eurozone,2011-08-08,2011-08-02,4,True,2011-08-09,1,True
+COVID19_Crash,2020-03-09,2020-02-27,7,True,2020-03-16,5,True
+Fed_Rate_Hike_Cycle_Start,2022-03-16,2022-01-10,45,False,2022-04-06,15,True

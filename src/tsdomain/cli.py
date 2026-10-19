@@ -77,9 +77,11 @@ def main() -> None:
 
         run_phase5_uncertainty()
     elif target == "mixed-models":
+        from tsdomain.analysis.grouped_cv import run_phase6_grouped_cv
         from tsdomain.analysis.mixed_models import run_phase6_mixed_models
 
         run_phase6_mixed_models()
+        run_phase6_grouped_cv()
     elif target == "finance":
         from tsdomain.analysis.finance_case import run_phase7_finance
 
@@ -106,9 +108,11 @@ def main() -> None:
         from tsdomain.metrics.conformal import run_phase5_uncertainty
 
         run_phase5_uncertainty()
+        from tsdomain.analysis.grouped_cv import run_phase6_grouped_cv
         from tsdomain.analysis.mixed_models import run_phase6_mixed_models
 
         run_phase6_mixed_models()
+        run_phase6_grouped_cv()
         from tsdomain.analysis.finance_case import run_phase7_finance
 
         run_phase7_finance()

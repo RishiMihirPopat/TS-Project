@@ -1,0 +1,40 @@
+{
+  "model_id": "Moirai_small",
+  "package_versions": {
+    "torch": "2.14.1+cpu"
+  },
+  "device": "cpu",
+  "seed": 20260410,
+  "context_length": 512,
+  "n_series": 60,
+  "n_windows": 60,
+  "runtime_s": 1.3935231000068597,
+  "peak_ram_mb": 855.0234375,
+  "peak_gpu_mb": 0.0,
+  "energy_kwh": 1.7419038750085748e-05,
+  "energy_method": "TDP_estimate",
+  "timestamp_utc": "2026-10-16T09:05:50.807415+00:00",
+  "platform": "Windows-10-10.0.26300-SP0",
+  "dataset_config": "hospital/M/short",
+  "checkpoint_id": "Salesforce/moirai-1.1-R-small",
+  "param_count": 13827528,
+  "scaling_mode": "common_zscore",
+  "compute_summary": {
+    "model": "Moirai_small",
+    "config": "hospital/M/short",
+    "param_count": 13827528,
+    "device": "cpu",
+    "load_time_s": 0.9553712999913841,
+    "infer_time_s_total": 1.3935231000068597,
+    "infer_time_std_s": 0.09340528257267393,
+    "infer_time_ms_per_point": 1.9354487500095274,
+    "infer_time_iqr_ms": 0.12938319444704893,
+    "peak_ram_mb": 855.0234375,
+    "peak_vram_mb": 0.0,
+    "energy_wh_total": 0.017419038750085748,
+    "energy_mwh_per_1k_points": 24.193109375119093,
+    "energy_source": "TDP_estimate",
+    "n_forecast_points": 720,
+    "n_repeats": 3
+  }
+}

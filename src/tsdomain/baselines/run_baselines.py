@@ -17,6 +17,41 @@ CORE_FOUR_CLASSICAL = ["SeasonalNaive", "AutoETS", "AutoTheta", "AutoARIMA"]
 ALL_CLASSICAL_MODELS = ["Naive", "SeasonalNaive", "Drift", "AutoETS", "AutoTheta", "AutoARIMA"]
 LEADERBOARD_FOUR_CLASSICAL = ["Seasonal_Naive", "Auto_ETS", "Auto_Theta", "Auto_Arima"]
 
+LOCAL_CONFIGS = [
+    "m4_monthly/M/short",
+    "m4_quarterly/Q/short",
+    "ett1/D/short",
+    "solar/W/short",
+    "hospital/M/short",
+    "us_births/M/short",
+    "saugeen/W/short",
+    "jena_weather/D/short",
+    "hierarchical_sales/W/short",
+    "loop_seattle/D/short",
+    "bizitobs_l2c/H/short",
+    "unseen_mandi/W/short",
+    "unseen_recency/D/short",
+]
+
+
+def load_evaluation_windows_for_config(config_name: str) -> List[Dict]:
+    """Load rolling evaluation windows for a local config with domain and base_dataset metadata."""
+    cfgs = load_and_validate_configs()
+    exp_cfg = cfgs["experiment"]
+    ds_map = {d.config: d for d in cfgs["datasets"].datasets}
+    ds_entry = ds_map.get(config_name)
+    windows, _ = generate_rolling_windows(
+        config_name,
+        max_series=exp_cfg.max_series_per_config,
+        max_windows_per_series=exp_cfg.max_windows_per_series,
+        seed=exp_cfg.seed,
+        exact_gift_eval=False,
+    )
+    for w in windows:
+        w["domain"] = ds_entry.domain if ds_entry else "unknown"
+        w["base_dataset"] = ds_entry.base_dataset if ds_entry else config_name.split("/")[0]
+    return windows
+
 
 def run_leaderboard_crosscheck(
     configs: List[str],

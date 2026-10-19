@@ -49,3 +49,23 @@ All non-obvious engineering, methodological, and external-fact decisions are rec
 11. **Leave-One-Base-Dataset-Out Reference Pool in `sim_distance` (`src/tsdomain/features/similarity.py`):**
     - *Context:* If an in-domain test dataset $d$ is included in its own reference pool $\mathcal{R}_m$, its distance to the nearest reference dataset is trivially zero, artificially inflating the separation between in-domain and out-of-domain datasets.
     - *Decision:* When computing continuous `sim_distance` (regularized Mahalanobis distance with ridge $\lambda = 0.25I$) and `sim_distance_knn` ($k = 3$ nearest reference base datasets), we exclude all configurations belonging to the test dataset's own `base_dataset` from $\mathcal{R}_m$.
+
+## 2026-10-16 / 2026-10-19 — Phase 4: Zero-Shot TSFM Inference & Compute Profiling
+
+12. **Unified PyTorch Environment & `jaxtyping.PyTree` Shim for `uni2ts` (`src/tsdomain/models/moirai_cli.py`):**
+    - *Context:* `chronos-forecasting==2.3.2`, `uni2ts==2.0.0`, `timesfm==3.0.2`, and `granite-tsfm==0.3.10` all run cleanly in the same Python 3.11 + `torch==2.14.1+cpu` environment when installed with `--no-deps`, except that `uni2ts` imports `from jaxtyping import Float, PyTree`, which in `jaxtyping==0.2.34` raises `ImportError` (or in `0.3.11` imports `jax.tree_util`).
+    - *Decision:* Provide a 5-line subscriptable `_PyTreeShim` on `jaxtyping.PyTree` before importing `uni2ts`, avoiding a redundant `jax` installation while preserving full `MoiraiModule` / `MoiraiForecast` execution.
+13. **`TimesFM` PyTorch Safetensors Checkpoint & In-Place Input List Mutation Fix (`src/tsdomain/models/timesfm_cli.py`):**
+    - *Verified Fact:* `google/timesfm-1.0-200m-pytorch` distributes legacy `.ckpt` weights, whereas `timesfm==3.0.2` (`TimesFM_2p5_200M_torch`) natively loads `google/timesfm-2.5-200m-pytorch` (`model.safetensors`, $231.3\text{M}$ parameters) with continuous quantile heads (`q0.1..q0.9`). Furthermore, `timesfm_2p5_base.py` lines 167–168 mutate the caller's `inputs` list in-place (`inputs += ...`) when `len(inputs) % global_batch_size != 0`.
+    - *Decision:* Update `configs/models.yaml` to `google/timesfm-2.5-200m-pytorch` (`torch_compile=False` on Windows CPU) and pass a shallow copy `inputs=list(clean_inputs)` in `TimesFMAdapter.predict_batch()`.
+
+## 2026-10-16 / 2026-10-19 — Phase 5–9: Conformal Calibration, Mixed Models, Finance Breaks & Ablations
+
+14. **Crossed Random Effects via Variance Components in `statsmodels.MixedLM` (`src/tsdomain/analysis/mixed_models.py`):**
+    - *Context:* Phase 6 requires crossed random intercepts $(1 \mid \text{base\_dataset}) + (1 \mid \text{model\_family})$ across $N = 1,463$ `(model, config)` pairs.
+    - *Decision:* Use a single top-level group with explicit variance components `vc_formula={"base_dataset": "0 + C(base_dataset)", "model_family": "0 + C(model_family)"}`, fit with ML (`reml=False`) for nested likelihood-ratio tests (`M0 -> M1 -> M2a/M2b/M2 -> M3`), and refit with REML (`reml=True`) plus 1,000-cluster bootstrap on `base_dataset` for final parameter CIs.
+15. **Time-Ordered Split Conformal Calibration (`src/tsdomain/metrics/conformal.py`):**
+    - *Decision:* Strictly partition rolling evaluation windows chronologically (`earliest 20% -> calibration`, `latest 80% -> evaluation`) and apply Conformalized Quantile Regression (CQR; Romano et al., 2019) to quantile-emitting models and absolute-residual split conformal prediction to point-only models (`TTM-R2-Pretrained`, `Naive`, `Drift`, `LightGBM`).
+16. **S&P 500 Volatility PELT & BOCPD Changepoint Alignment (`src/tsdomain/analysis/finance_case.py`, `src/tsdomain/analysis/ablations.py`):**
+    - *Decision:* Apply `ruptures.Pelt(model="l2", min_size=15, jump=1)` with penalty calibrated to major regime shifts (`pen=12.0`) on 5-day smoothed S&P 500 Garman–Klass log-volatility (recovering 5 of 6 labelled crisis dates within $\pm 30$ trading days), and cross-check against Bayesian Online Changepoint Detection (BOCPD; Adams & MacKay, 2007) in Phase 8b.4.
+

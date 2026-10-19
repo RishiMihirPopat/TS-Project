@@ -1,0 +1,40 @@
+{
+  "model_id": "TTM-R2-Pretrained",
+  "package_versions": {
+    "torch": "2.14.1+cpu"
+  },
+  "device": "cpu",
+  "seed": 20260410,
+  "context_length": 512,
+  "n_series": 60,
+  "n_windows": 60,
+  "runtime_s": 0.16644739999901503,
+  "peak_ram_mb": 1905.890625,
+  "peak_gpu_mb": 0.0,
+  "energy_kwh": 2.080592499987688e-06,
+  "energy_method": "TDP_estimate",
+  "timestamp_utc": "2026-10-16T09:11:37.272911+00:00",
+  "platform": "Windows-10-10.0.26300-SP0",
+  "dataset_config": "hospital/M/short",
+  "checkpoint_id": "ibm-granite/granite-timeseries-ttm-r2",
+  "param_count": 805280,
+  "scaling_mode": "common_zscore",
+  "compute_summary": {
+    "model": "TTM-R2-Pretrained",
+    "config": "hospital/M/short",
+    "param_count": 805280,
+    "device": "cpu",
+    "load_time_s": 0.545816099998774,
+    "infer_time_s_total": 0.16644739999901503,
+    "infer_time_std_s": 0.014367949567659449,
+    "infer_time_ms_per_point": 0.23117694444307643,
+    "infer_time_iqr_ms": 0.01950999999785885,
+    "peak_ram_mb": 1905.890625,
+    "peak_vram_mb": 0.0,
+    "energy_wh_total": 0.002080592499987688,
+    "energy_mwh_per_1k_points": 2.8897118055384556,
+    "energy_source": "TDP_estimate",
+    "n_forecast_points": 720,
+    "n_repeats": 3
+  }
+}

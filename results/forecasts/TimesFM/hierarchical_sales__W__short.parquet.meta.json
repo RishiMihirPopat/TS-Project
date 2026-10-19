@@ -1,0 +1,40 @@
+{
+  "model_id": "TimesFM",
+  "package_versions": {
+    "torch": "2.14.1+cpu"
+  },
+  "device": "cpu",
+  "seed": 20260410,
+  "context_length": 512,
+  "n_series": 60,
+  "n_windows": 120,
+  "runtime_s": 12.843679199999315,
+  "peak_ram_mb": 1907.6875,
+  "peak_gpu_mb": 0.0,
+  "energy_kwh": 0.00016054598999999144,
+  "energy_method": "TDP_estimate",
+  "timestamp_utc": "2026-10-16T09:09:26.695973+00:00",
+  "platform": "Windows-10-10.0.26300-SP0",
+  "dataset_config": "hierarchical_sales/W/short",
+  "checkpoint_id": "google/timesfm-2.5-200m-pytorch",
+  "param_count": 231289280,
+  "scaling_mode": "common_zscore",
+  "compute_summary": {
+    "model": "TimesFM",
+    "config": "hierarchical_sales/W/short",
+    "param_count": 231289280,
+    "device": "cpu",
+    "load_time_s": 2.2736081999901216,
+    "infer_time_s_total": 12.843679199999315,
+    "infer_time_std_s": 0.2158751897961195,
+    "infer_time_ms_per_point": 13.378832499999286,
+    "infer_time_iqr_ms": 0.22434989583265086,
+    "peak_ram_mb": 1907.6875,
+    "peak_vram_mb": 0.0,
+    "energy_wh_total": 0.16054598999999145,
+    "energy_mwh_per_1k_points": 167.23540624999112,
+    "energy_source": "TDP_estimate",
+    "n_forecast_points": 960,
+    "n_repeats": 3
+  }
+}

@@ -80,3 +80,50 @@ This document explains every module in `src/tsdomain/` and `seed/` in plain lang
 
 ### 10. `src/tsdomain/features/similarity.py` & `run_features.py`
 - **What they do:** Map each `(model, config)` pair to categorical pretraining exposure (`domain_in_pretraining` $\in \{\text{true}, \text{false}, \text{unknown}\}$, plus optimistic/conservative codings) and continuous standardized feature-space distance (`sim_distance` via regularized Mahalanobis distance and `sim_distance_knn` via 3-NN Euclidean distance, leaving out the target `base_dataset`), alongside correlation and VIF diagnostics (`results/features/vif_report.csv`).
+
+---
+
+## Phase 4 — Zero-Shot TSFM Inference & Compute Profiling
+
+### 11. `src/tsdomain/models/base.py`, `chronos_cli.py`, `moirai_cli.py`, `timesfm_cli.py`, `ttm_cli.py`, & `run_models.py`
+- **What they do:** Implement the common preprocessing/z-score scaling protocol (`context_length = 512`, `apply_common_scaling`, `invert_common_scaling`) and zero-shot inference adapters for `Chronos_small` (`amazon/chronos-t5-small`), `Moirai_small` (`Salesforce/moirai-1.1-R-small`), `TimesFM` (`google/timesfm-2.5-200m-pytorch`), and `TTM-R2-Pretrained` (`ibm-granite/granite-timeseries-ttm-r2`).
+- **Why they exist:** Ensure every TSFM sees identical context windows and scaling before measuring accuracy and compute cost across the 13 local configurations.
+
+### 12. `src/tsdomain/compute/profiler.py`
+- **What it does:** Measures model load time (`load_time_s`), total and per-point inference latency (`infer_time_ms_per_point`, `infer_time_iqr_ms`), peak host RSS (`peak_ram_mb`), peak GPU memory (`peak_vram_mb`), and energy (`energy_wh_total`, `energy_mwh_per_1k_points`, `energy_source`) across 3 profiled repeats after a 5-series warmup.
+
+---
+
+## Phase 5 — Uncertainty Quantification & Conformal Calibration (P1)
+
+### 13. `src/tsdomain/metrics/conformal.py`
+- **What it does:** Evaluates native prediction intervals (`q0.1..q0.9`) and applies time-ordered split conformal calibration (earliest 20% windows for calibration, remaining 80% for evaluation).
+- **Formulas implemented:**
+  - **Conformalized Quantile Regression (CQR; Romano et al., 2019):**
+    $$s_i = \max(\hat{q}_{\alpha/2}(x_i) - y_i,\; y_i - \hat{q}_{1-\alpha/2}(x_i)), \quad \hat{Q}_{1-\alpha} = \text{Quantile}_{(1-\alpha)(1 + 1/n_{\text{cal}})}(\{s_i\})$$
+  - **Split Residual Conformal (for point-only models):** $s_i = |y_i - \hat{y}_i|$.
+
+---
+
+## Phase 6 — Hierarchical Mixed-Effects Models & LODO Cross-Validation
+
+### 14. `src/tsdomain/analysis/mixed_models.py` & `grouped_cv.py`
+- **What they do:** Fit the nested mixed-effects model ladder (`M0`, `M1`, `M2a`, `M2b`, `M2`, `M3`) with crossed random intercepts $(1 \mid \text{base\_dataset}) + (1 \mid \text{model\_family})$, compute Nakagawa & Schielzeth marginal/conditional $R^2$, 1,000-cluster bootstrap CIs, Benjamini–Hochberg FDR $q$-values, H2 strata contrasts, and Leave-One-Base-Dataset-Out (`LeaveOneGroupOut` on `base_dataset`) cross-validation against the Constant and Tan Jerome & Simon (2026) heuristics.
+
+---
+
+## Phase 7 — Finance / Volatility Structural-Break Case Study (P1)
+
+### 15. `src/tsdomain/analysis/finance_case.py`
+- **What it does:** Segments S&P 500 daily Garman–Klass log-volatility (1990–2026) via PELT (`ruptures`), verifies recovery of 6 historical crisis dates within $\pm 30$ trading days, and compares `Naive`, `EWMA(0.94)`, `GARCH(1,1)-t` (`arch`), `Chronos_small` (no finance in pretraining), and `Moirai_small` (finance in pretraining) across stable vs 63-day post-break windows using stationary block bootstrap CIs (Politis & Romano, 1994) and Kupiec (1995) POF interval tests.
+
+---
+
+## Phase 8 & Phase 9 — LightGBM, Robustness Ablations, Pareto Analysis & Report
+
+### 16. `src/tsdomain/baselines/lgbm.py` & `src/tsdomain/analysis/ablations.py`
+- **What they do:** Run a global autoregressive LightGBM baseline tuned with `optuna` under strict wall-clock budget parity with `Moirai_small`, and execute the four-part robustness ablation suite (common vs model-default scaling, pretraining leakage exclusion, `unknown` registry coding sensitivity, and BOCPD vs PELT break detection).
+
+### 17. `src/tsdomain/analysis/pareto.py` & `report_assets.py`
+- **What they do:** Identify the accuracy–energy and accuracy–latency Pareto frontiers, compute `energy_per_1pct_mase_gain_mwh`, map the H4 feature-space decision boundary, and programmatically render all 6 figures (`report/figures/`), 6 tables (`report/tables/`), and `report/report.md`.
+

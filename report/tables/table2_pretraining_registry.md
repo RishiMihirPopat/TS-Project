@@ -1,0 +1,17 @@
+| model | model_family | param_count_M | n_configs | in_domain_share | mean_sim_distance | mean_mase | mean_delta_mase_pct | win_rate_vs_classical_pct |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Chronos-2 | chronos_2 | 120.00 | 97 | 1.00 | 2.31 | 1.43 | 18.05 | 87.63 |
+| TimesFM-2.5 | timesfm | 231.29 | 97 | 0.89 | 2.44 | 1.49 | 17.00 | 85.57 |
+| Moirai2 | moirai2 | 50.00 | 97 | 1.00 | 2.31 | 1.52 | 14.04 | 77.32 |
+| timesfm_2_0_500m | timesfm | 50.00 | 97 | 0.89 | 2.44 | 1.71 | 8.88 | 73.20 |
+| chronos_bolt_base | chronos_bolt | 205.00 | 97 | 0.89 | 2.44 | 1.86 | 0.94 | 77.32 |
+| chronos_bolt_small | chronos_bolt | 48.00 | 97 | 0.89 | 2.44 | 1.82 | -0.46 | 75.26 |
+| Chronos_large | chronos_t5 | 710.00 | 97 | 0.89 | 2.44 | 1.91 | -5.90 | 62.89 |
+| Chronos_base | chronos_t5 | 200.00 | 97 | 0.89 | 2.44 | 1.93 | -6.56 | 60.82 |
+| Moirai_large | moirai_1 | 311.00 | 97 | 1.00 | 2.31 | 1.85 | -7.95 | 59.79 |
+| Moirai_base | moirai_1 | 91.00 | 97 | 1.00 | 2.31 | 2.02 | -8.38 | 65.98 |
+| Chronos_small | chronos_t5 | 46.00 | 99 | 0.87 | 2.42 | 1.92 | -8.41 | 57.58 |
+| Moirai_small | moirai_1 | 13.83 | 99 | 0.98 | 2.29 | 1.93 | -14.80 | 52.53 |
+| TimesFM | timesfm | 200.00 | 99 | 0.87 | 2.42 | 4.10 | -21.20 | 48.48 |
+| TTM-R2-Pretrained | ttm | 0.81 | 99 | 0.83 | 2.50 | 2.26 | -23.18 | 43.43 |
+| TTM-R1-Pretrained | ttm | 50.00 | 97 | 0.85 | 2.51 | 2.39 | -28.49 | 37.11 |
