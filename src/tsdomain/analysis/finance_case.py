@@ -12,7 +12,7 @@ from arch import arch_model
 from scipy import stats
 from scipy.stats import norm
 
-from tsdomain.metrics.point import mase, rmse
+from tsdomain.metrics.point import mase, qlike, rmse
 from tsdomain.metrics.probabilistic import coverage_and_width, crps_weighted_quantile_loss
 from tsdomain.models.chronos_cli import ChronosAdapter
 from tsdomain.models.moirai_cli import MoiraiAdapter
@@ -26,44 +26,6 @@ LABELLED_CRISIS_EVENTS: List[Tuple[str, str]] = [
     ("2020-03-09", "COVID19_Crash"),
     ("2022-03-16", "Fed_Rate_Hike_Cycle_Start"),
 ]
-
-
-def kupiec_pof_test(
-    y_true: np.ndarray,
-    q_low: np.ndarray,
-    q_high: np.ndarray,
-    alpha: float = 0.20,
-) -> Dict[str, float]:
-    """Kupiec (1995) Proportion-of-Failures (POF) likelihood-ratio test for interval coverage."""
-    y = np.asarray(y_true, dtype=float)
-    lo = np.asarray(q_low, dtype=float)
-    hi = np.asarray(q_high, dtype=float)
-    violations = ((y < lo) | (y > hi)).astype(int)
-    n = int(len(violations))
-    x = int(np.sum(violations))
-    if n == 0:
-        return {"violation_rate": np.nan, "kupiec_lr_stat": np.nan, "kupiec_p_value": np.nan}
-
-    p_hat = np.clip(x / float(n), 1e-6, 1.0 - 1e-6)
-    p0 = float(alpha)
-    ll_null = (n - x) * np.log(1.0 - p0) + x * np.log(p0)
-    ll_alt = (n - x) * np.log(1.0 - p_hat) + x * np.log(p_hat)
-    lr_pof = float(max(0.0, -2.0 * (ll_null - ll_alt)))
-    p_val = float(stats.chi2.sf(lr_pof, df=1))
-    return {
-        "violation_rate": float(x / float(n)),
-        "empirical_coverage": float(1.0 - x / float(n)),
-        "kupiec_lr_stat": lr_pof,
-        "kupiec_p_value": p_val,
-    }
-
-
-def qlike_loss(var_true: np.ndarray, var_pred: np.ndarray) -> float:
-    """Patton (2011) QLIKE volatility loss on variance scale: sigma^2/hat_sigma^2 - ln(sigma^2/hat_sigma^2) - 1."""
-    vt = np.maximum(np.asarray(var_true, dtype=float), 1e-10)
-    vp = np.maximum(np.asarray(var_pred, dtype=float), 1e-10)
-    ratio = vt / vp
-    return float(np.mean(ratio - np.log(ratio) - 1.0))
 
 
 def detect_spx_volatility_breaks(df_spx: pd.DataFrame) -> Tuple[pd.DataFrame, List[int]]:
@@ -106,6 +68,7 @@ def detect_spx_volatility_breaks(df_spx: pd.DataFrame) -> Tuple[pd.DataFrame, Li
                 "detected_break_idx": nearest_bkp_idx,
                 "trading_day_distance": trading_day_dist,
                 "recovered_within_30d": bool(trading_day_dist <= 30),
+                "n_total_pelt_breaks": int(len(bkps)),
             }
         )
 
@@ -213,6 +176,168 @@ def stationary_block_bootstrap_diff(
     )
 
 
+def diebold_mariano_test(loss_a: np.ndarray, loss_b: np.ndarray, h: int = 1) -> Tuple[float, float]:
+    """Two-sided Diebold-Mariano (1995) test with Harvey-Leybourne-Newbold finite-sample adjustment."""
+    d = np.asarray(loss_a, dtype=float) - np.asarray(loss_b, dtype=float)
+    d = d[np.isfinite(d)]
+    n = len(d)
+    if n < 3:
+        return 0.0, 1.0
+    d_bar = float(np.mean(d))
+    d_c = d - d_bar
+    gamma0 = float(np.dot(d_c, d_c) / n)
+    var_d = gamma0
+    for k in range(1, max(1, int(h))):
+        if k < n:
+            g_k = float(np.dot(d_c[k:], d_c[:-k]) / n)
+            var_d += 2.0 * (1.0 - k / float(h)) * g_k
+    var_d_bar = max(var_d / n, 1e-12)
+    hln_factor = max((n + 1.0 - 2.0 * h + h * (h - 1.0) / n) / n, 0.1)
+    dm_stat = float((d_bar / np.sqrt(var_d_bar)) * np.sqrt(hln_factor))
+    p_val = float(2.0 * stats.t.sf(abs(dm_stat), df=n - 1))
+    return dm_stat, p_val
+
+
+def summarize_finance_window_metrics(win_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Aggregate window-level finance metrics by regime/horizon and compute H3 DiD + DM contrasts."""
+    win_df = win_df.copy()
+    if "mse" not in win_df.columns:
+        win_df["mse"] = win_df["rmse"] ** 2
+
+    regime_rows: List[Dict] = []
+    for (h, regime, m_name), grp in win_df.groupby(["horizon", "regime", "model"], sort=True):
+        tot_pts = int(grp["n_points"].sum())
+        tot_viol = int(grp["violations_80"].sum())
+        p_hat = np.clip(tot_viol / float(max(1, tot_pts)), 1e-6, 1.0 - 1e-6)
+        p0 = 0.20
+        ll_null = (tot_pts - tot_viol) * np.log(1.0 - p0) + tot_viol * np.log(p0)
+        ll_alt = (tot_pts - tot_viol) * np.log(1.0 - p_hat) + tot_viol * np.log(p_hat)
+        lr_pof = float(max(0.0, -2.0 * (ll_null - ll_alt)))
+        kup_p = float(stats.chi2.sf(lr_pof, df=1))
+
+        regime_rows.append(
+            {
+                "horizon": int(h),
+                "regime": str(regime),
+                "model": str(m_name),
+                "n_windows": int(len(grp)),
+                "mase": float(grp["mase"].mean()),
+                "mase_median": float(grp["mase"].median()),
+                "mse": float(grp["mse"].mean()),
+                "rmse": float(grp["rmse"].mean()),
+                "qlike": float(grp["qlike"].mean()),
+                "crps": float(grp["crps"].mean()),
+                "coverage_80": float(1.0 - tot_viol / float(max(1, tot_pts))),
+                "width_80": float(grp["width_80"].mean()),
+                "kupiec_lr_stat": lr_pof,
+                "kupiec_p_value": kup_p,
+            }
+        )
+
+    regime_df = pd.DataFrame(regime_rows)
+
+    horizons = sorted(win_df["horizon"].unique())
+    h3_rows: List[Dict] = []
+    for h in horizons:
+        sub_h = win_df[win_df["horizon"] == h]
+        piv_mase = sub_h.pivot(index=["window_id", "regime"], columns="model", values="mase").reset_index()
+        piv_qlike = sub_h.pivot(index=["window_id", "regime"], columns="model", values="qlike").reset_index()
+        piv_mse = sub_h.pivot(index=["window_id", "regime"], columns="model", values="mse").reset_index()
+
+        # Difference-in-Differences (DiD): (post_break - stable) for Chronos minus (post_break - stable) for Moirai
+        pb_mase = piv_mase[piv_mase["regime"] == "post_break"].reset_index(drop=True)
+        st_mase = piv_mase[piv_mase["regime"] == "stable"].reset_index(drop=True)
+        n_pair = min(len(pb_mase), len(st_mase))
+        did_mase_vec = (
+            (pb_mase["Chronos_small"].iloc[:n_pair].to_numpy() - st_mase["Chronos_small"].iloc[:n_pair].to_numpy())
+            - (pb_mase["Moirai_small"].iloc[:n_pair].to_numpy() - st_mase["Moirai_small"].iloc[:n_pair].to_numpy())
+        )
+        pb_ql = piv_qlike[piv_qlike["regime"] == "post_break"].reset_index(drop=True)
+        st_ql = piv_qlike[piv_qlike["regime"] == "stable"].reset_index(drop=True)
+        did_ql_vec = (
+            (pb_ql["Chronos_small"].iloc[:n_pair].to_numpy() - st_ql["Chronos_small"].iloc[:n_pair].to_numpy())
+            - (pb_ql["Moirai_small"].iloc[:n_pair].to_numpy() - st_ql["Moirai_small"].iloc[:n_pair].to_numpy())
+        )
+        pb_ms = piv_mse[piv_mse["regime"] == "post_break"].reset_index(drop=True)
+        st_ms = piv_mse[piv_mse["regime"] == "stable"].reset_index(drop=True)
+        did_ms_vec = (
+            (pb_ms["Chronos_small"].iloc[:n_pair].to_numpy() - st_ms["Chronos_small"].iloc[:n_pair].to_numpy())
+            - (pb_ms["Moirai_small"].iloc[:n_pair].to_numpy() - st_ms["Moirai_small"].iloc[:n_pair].to_numpy())
+        )
+        did_m_mean, did_m_lo, did_m_hi = stationary_block_bootstrap_diff(did_mase_vec, block_length=4, n_boot=1000)
+        did_q_mean, did_q_lo, did_q_hi = stationary_block_bootstrap_diff(did_ql_vec, block_length=4, n_boot=1000)
+        did_s_mean, did_s_lo, did_s_hi = stationary_block_bootstrap_diff(did_ms_vec, block_length=4, n_boot=1000)
+
+        for reg in ["stable", "post_break"]:
+            r_mase = piv_mase[piv_mase["regime"] == reg]
+            r_qlike = piv_qlike[piv_qlike["regime"] == reg]
+            r_mse = piv_mse[piv_mse["regime"] == reg]
+
+            c_mean, c_lo, c_hi = stationary_block_bootstrap_diff(
+                (r_mase["Chronos_small"] - r_mase["GARCH_1_1_t"]).to_numpy(), block_length=4, n_boot=1000
+            )
+            m_mean, m_lo, m_hi = stationary_block_bootstrap_diff(
+                (r_mase["Moirai_small"] - r_mase["GARCH_1_1_t"]).to_numpy(), block_length=4, n_boot=1000
+            )
+            cm_mean, cm_lo, cm_hi = stationary_block_bootstrap_diff(
+                (r_mase["Chronos_small"] - r_mase["Moirai_small"]).to_numpy(), block_length=4, n_boot=1000
+            )
+            cm_ql_mean, cm_ql_lo, cm_ql_hi = stationary_block_bootstrap_diff(
+                (r_qlike["Chronos_small"] - r_qlike["Moirai_small"]).to_numpy(), block_length=4, n_boot=1000
+            )
+            cm_ms_mean, cm_ms_lo, cm_ms_hi = stationary_block_bootstrap_diff(
+                (r_mse["Chronos_small"] - r_mse["Moirai_small"]).to_numpy(), block_length=4, n_boot=1000
+            )
+            dm_m_stat, dm_m_p = diebold_mariano_test(
+                r_mase["Chronos_small"].to_numpy(), r_mase["Moirai_small"].to_numpy(), h=int(h)
+            )
+            dm_q_stat, dm_q_p = diebold_mariano_test(
+                r_qlike["Chronos_small"].to_numpy(), r_qlike["Moirai_small"].to_numpy(), h=int(h)
+            )
+            dm_s_stat, dm_s_p = diebold_mariano_test(
+                r_mse["Chronos_small"].to_numpy(), r_mse["Moirai_small"].to_numpy(), h=int(h)
+            )
+            h3_rows.append(
+                {
+                    "horizon": int(h),
+                    "regime": reg,
+                    "chronos_minus_garch_mean": c_mean,
+                    "chronos_minus_garch_ci95_low": c_lo,
+                    "chronos_minus_garch_ci95_high": c_hi,
+                    "moirai_minus_garch_mean": m_mean,
+                    "moirai_minus_garch_ci95_low": m_lo,
+                    "moirai_minus_garch_ci95_high": m_hi,
+                    "chronos_minus_moirai_mean": cm_mean,
+                    "chronos_minus_moirai_ci95_low": cm_lo,
+                    "chronos_minus_moirai_ci95_high": cm_hi,
+                    "chronos_minus_moirai_qlike_mean": cm_ql_mean,
+                    "chronos_minus_moirai_qlike_ci95_low": cm_ql_lo,
+                    "chronos_minus_moirai_qlike_ci95_high": cm_ql_hi,
+                    "chronos_minus_moirai_mse_mean": cm_ms_mean,
+                    "chronos_minus_moirai_mse_ci95_low": cm_ms_lo,
+                    "chronos_minus_moirai_mse_ci95_high": cm_ms_hi,
+                    "dm_chronos_vs_moirai_mase_stat": dm_m_stat,
+                    "dm_chronos_vs_moirai_mase_p": dm_m_p,
+                    "dm_chronos_vs_moirai_qlike_stat": dm_q_stat,
+                    "dm_chronos_vs_moirai_qlike_p": dm_q_p,
+                    "dm_chronos_vs_moirai_mse_stat": dm_s_stat,
+                    "dm_chronos_vs_moirai_mse_p": dm_s_p,
+                    "did_mase_mean": did_m_mean,
+                    "did_mase_ci95_low": did_m_lo,
+                    "did_mase_ci95_high": did_m_hi,
+                    "did_qlike_mean": did_q_mean,
+                    "did_qlike_ci95_low": did_q_lo,
+                    "did_qlike_ci95_high": did_q_hi,
+                    "did_mse_mean": did_s_mean,
+                    "did_mse_ci95_low": did_s_lo,
+                    "did_mse_ci95_high": did_s_hi,
+                }
+            )
+
+    h3_df = pd.DataFrame(h3_rows)
+    return regime_df, h3_df
+
+
 def run_phase7_finance(device: str = "auto") -> Dict[str, pd.DataFrame]:
     """Execute Phase 7 Finance / Volatility Structural-Break Case Study (H3)."""
     spx_path = PROJECT_ROOT / "data" / "processed" / "spx_daily.parquet"
@@ -240,10 +365,10 @@ def run_phase7_finance(device: str = "auto") -> Dict[str, pd.DataFrame]:
     for b_idx in major_break_indices:
         is_post_break[b_idx : min(n_total, b_idx + 63)] = True
 
-    # Build 24 post-break origin indices (4 offsets per crisis: +2, +10, +22, +38 trading days)
+    # Build 24 post-break origin indices anchored to PELT-detected breaks (+2, +10, +22, +38 trading days)
     post_break_origins: List[int] = []
     for _, r in breaks_df.iterrows():
-        b0 = int(r["labelled_trading_idx"])
+        b0 = int(r["detected_break_idx"])
         for offset in (2, 10, 22, 38):
             cand = b0 + offset
             if 520 <= cand < n_total - 25:
@@ -337,6 +462,7 @@ def run_phase7_finance(device: str = "auto") -> Dict[str, pd.DataFrame]:
                 var_pred = np.exp(2.0 * np.clip(mp, -15.0, 5.0))
                 q_map = {q: qd[f"q{q:.1f}"] for q in QUANTILE_LEVELS}
                 cov_info = coverage_and_width(lv_test, qd["q0.1"], qd["q0.9"], y_train=lv_train)
+                r_val = rmse(lv_test, mp)
                 all_window_rows.append(
                     {
                         "horizon": h,
@@ -346,8 +472,9 @@ def run_phase7_finance(device: str = "auto") -> Dict[str, pd.DataFrame]:
                         "regime": regime,
                         "model": m_name,
                         "mase": mase(lv_test, mp, lv_train, m=1),
-                        "rmse": rmse(lv_test, mp),
-                        "qlike": qlike_loss(var_test, var_pred),
+                        "mse": float(r_val**2),
+                        "rmse": r_val,
+                        "qlike": qlike(var_test, var_pred),
                         "crps": crps_weighted_quantile_loss(lv_test, q_map),
                         "coverage_80": float(cov_info["coverage"]),
                         "width_80": float(cov_info["scaled_width"]),
@@ -359,76 +486,8 @@ def run_phase7_finance(device: str = "auto") -> Dict[str, pd.DataFrame]:
     win_df = pd.DataFrame(all_window_rows)
     win_df.to_parquet(analysis_dir / "finance_window_metrics.parquet", index=False)
 
-    # Aggregate by (horizon, regime, model) + Kupiec POF test
-    regime_rows: List[Dict] = []
-    for (h, regime, m_name), grp in win_df.groupby(["horizon", "regime", "model"], sort=True):
-        tot_pts = int(grp["n_points"].sum())
-        tot_viol = int(grp["violations_80"].sum())
-        p_hat = np.clip(tot_viol / float(max(1, tot_pts)), 1e-6, 1.0 - 1e-6)
-        p0 = 0.20
-        ll_null = (tot_pts - tot_viol) * np.log(1.0 - p0) + tot_viol * np.log(p0)
-        ll_alt = (tot_pts - tot_viol) * np.log(1.0 - p_hat) + tot_viol * np.log(p_hat)
-        lr_pof = float(max(0.0, -2.0 * (ll_null - ll_alt)))
-        kup_p = float(stats.chi2.sf(lr_pof, df=1))
-
-        regime_rows.append(
-            {
-                "horizon": int(h),
-                "regime": str(regime),
-                "model": str(m_name),
-                "n_windows": int(len(grp)),
-                "mase": float(grp["mase"].mean()),
-                "mase_median": float(grp["mase"].median()),
-                "rmse": float(grp["rmse"].mean()),
-                "qlike": float(grp["qlike"].mean()),
-                "crps": float(grp["crps"].mean()),
-                "coverage_80": float(1.0 - tot_viol / float(max(1, tot_pts))),
-                "width_80": float(grp["width_80"].mean()),
-                "kupiec_lr_stat": lr_pof,
-                "kupiec_p_value": kup_p,
-            }
-        )
-
-    regime_df = pd.DataFrame(regime_rows)
+    regime_df, h3_df = summarize_finance_window_metrics(win_df)
     regime_df.to_csv(analysis_dir / "finance_metrics_by_regime.csv", index=False)
-
-    # H3 Test: Compare (MASE_Chronos - MASE_GARCH) vs (MASE_Moirai - MASE_GARCH) in stable vs post_break
-    h3_rows: List[Dict] = []
-    for h in horizons:
-        sub_h = win_df[win_df["horizon"] == h]
-        piv = sub_h.pivot(index=["window_id", "regime"], columns="model", values="mase").reset_index()
-        piv["chronos_minus_garch"] = piv["Chronos_small"] - piv["GARCH_1_1_t"]
-        piv["moirai_minus_garch"] = piv["Moirai_small"] - piv["GARCH_1_1_t"]
-        piv["chronos_minus_moirai"] = piv["Chronos_small"] - piv["Moirai_small"]
-
-        for reg in ["stable", "post_break"]:
-            r_sub = piv[piv["regime"] == reg]
-            c_mean, c_lo, c_hi = stationary_block_bootstrap_diff(
-                r_sub["chronos_minus_garch"].to_numpy(), block_length=4, n_boot=1000
-            )
-            m_mean, m_lo, m_hi = stationary_block_bootstrap_diff(
-                r_sub["moirai_minus_garch"].to_numpy(), block_length=4, n_boot=1000
-            )
-            cm_mean, cm_lo, cm_hi = stationary_block_bootstrap_diff(
-                r_sub["chronos_minus_moirai"].to_numpy(), block_length=4, n_boot=1000
-            )
-            h3_rows.append(
-                {
-                    "horizon": int(h),
-                    "regime": reg,
-                    "chronos_minus_garch_mean": c_mean,
-                    "chronos_minus_garch_ci95_low": c_lo,
-                    "chronos_minus_garch_ci95_high": c_hi,
-                    "moirai_minus_garch_mean": m_mean,
-                    "moirai_minus_garch_ci95_low": m_lo,
-                    "moirai_minus_garch_ci95_high": m_hi,
-                    "chronos_minus_moirai_mean": cm_mean,
-                    "chronos_minus_moirai_ci95_low": cm_lo,
-                    "chronos_minus_moirai_ci95_high": cm_hi,
-                }
-            )
-
-    h3_df = pd.DataFrame(h3_rows)
     h3_df.to_csv(analysis_dir / "finance_h3_contrast.csv", index=False)
 
     return {

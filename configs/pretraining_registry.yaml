@@ -5,10 +5,23 @@ models:
   Chronos_small:
     checkpoint_id: "amazon/chronos-t5-small"
     family: "chronos_t5"
+    param_count: 46000000
     pretraining_corpus_name: "Chronos Pretraining Corpus + TSMixup + KernelSynth"
     training_cutoff: "2024-03"
     finance_included: false
     agriculture_mandi_included: false
+    dataset_leaks:
+      - "m4_yearly"
+      - "m4_quarterly"
+      - "m4_monthly"
+      - "m4_weekly"
+      - "m4_daily"
+      - "m4_hourly"
+      - "electricity"
+      - "solar"
+      - "saugeen"
+      - "kdd_cup_2018"
+      - "jena_weather"
     domains_covered:
       Energy:
         in_pretraining: "true"
@@ -41,10 +54,10 @@ models:
         source_url: "https://arxiv.org/abs/2403.07815"
         notes: "Hospital, COVID Deaths, and US Births were held out strictly in Benchmark II (zero-shot evaluation)."
       Econ/Fin:
-        in_pretraining: "false"
+        in_pretraining: "partial"
         verified: true
         source_url: "https://arxiv.org/abs/2403.07815"
-        notes: "Chronos T5 explicitly excluded financial market & M4 macro/finance series from pretraining (confirmed in Ansari et al., 2024 and Marconi, 2025)."
+        notes: "no market-price data; finance via M4 only (M4 Yearly/Quarterly/Monthly/Hourly included in Chronos pretraining corpus, Ansari et al., 2024 Table 1)."
       Agriculture/Mandi:
         in_pretraining: "false"
         verified: true
@@ -59,34 +72,48 @@ models:
   Chronos_base:
     inherits_from: "Chronos_small"
     checkpoint_id: "amazon/chronos-t5-base"
+    param_count: 200000000
     training_cutoff: "2024-03"
     finance_included: false
 
   Chronos_large:
     inherits_from: "Chronos_small"
     checkpoint_id: "amazon/chronos-t5-large"
+    param_count: 710000000
     training_cutoff: "2024-03"
     finance_included: false
 
   chronos_bolt_small:
     inherits_from: "Chronos_small"
     checkpoint_id: "amazon/chronos-bolt-small"
+    family: "chronos_bolt"
+    param_count: 48000000
     training_cutoff: "2024-11"
     finance_included: false
 
   chronos_bolt_base:
     inherits_from: "Chronos_small"
     checkpoint_id: "amazon/chronos-bolt-base"
+    family: "chronos_bolt"
+    param_count: 205000000
     training_cutoff: "2024-11"
     finance_included: false
 
   Chronos-2:
     checkpoint_id: "amazon/chronos-2"
     family: "chronos_2"
+    param_count: 120000000
     pretraining_corpus_name: "Chronos-2 Expanded Corpus + GiftEvalPretrain"
     training_cutoff: "2025-02"
     finance_included: true
     agriculture_mandi_included: false
+    dataset_leaks:
+      - "ett1"
+      - "ett2"
+      - "solar"
+      - "saugeen"
+      - "kdd_cup_2018"
+      - "electricity"
     domains_covered:
       Energy:
         in_pretraining: "true"
@@ -121,17 +148,27 @@ models:
         verified: true
         source_url: "https://huggingface.co/datasets/Viharikvs/TFSMAG"
       Nature/PostCutoff2025:
-        in_pretraining: "false"
-        verified: true
+        in_pretraining: "unknown"
+        verified: false
         source_url: "https://github.com/SalesforceAIResearch/gift-eval/tree/main/results/Chronos-2"
 
   Moirai_small:
     checkpoint_id: "Salesforce/moirai-1.1-R-small"
-    family: "moirai"
+    family: "moirai_1"
+    param_count: 13827528
     pretraining_corpus_name: "LOTSA (Large Open Time Series Archive, 27B observations)"
     training_cutoff: "2024-06"
     finance_included: true
     agriculture_mandi_included: false
+    dataset_leaks:
+      - "ett1"
+      - "ett2"
+      - "solar"
+      - "saugeen"
+      - "kdd_cup_2018"
+      - "electricity"
+      - "jena_weather"
+      - "loop_seattle"
     domains_covered:
       Energy:
         in_pretraining: "true"
@@ -182,28 +219,50 @@ models:
   Moirai_base:
     inherits_from: "Moirai_small"
     checkpoint_id: "Salesforce/moirai-1.1-R-base"
+    param_count: 91000000
     training_cutoff: "2024-06"
     finance_included: true
 
   Moirai_large:
     inherits_from: "Moirai_small"
     checkpoint_id: "Salesforce/moirai-1.1-R-large"
+    param_count: 311000000
     training_cutoff: "2024-06"
     finance_included: true
 
   Moirai2:
     inherits_from: "Moirai_small"
     checkpoint_id: "Salesforce/moirai-2.0-R-small"
+    family: "moirai_2"
+    param_count: 14000000
     training_cutoff: "2025-05"
     finance_included: true
+    domains_covered:
+      Nature/PostCutoff2025:
+        in_pretraining: "unknown"
+        verified: false
+        source_url: "https://github.com/SalesforceAIResearch/gift-eval/tree/main/results/Moirai2"
+        notes: "Released 2025; exact cutoff overlap with 2025-2026 ERA5 window is unknown."
 
   TimesFM:
     checkpoint_id: "google/timesfm-1.0-200m-pytorch"
     family: "timesfm"
+    param_count: 200000000
     pretraining_corpus_name: "Google Trends + Wiki Pageviews + Public Benchmarks + Synthetic"
     training_cutoff: "2024-04"
     finance_included: false
     agriculture_mandi_included: false
+    dataset_leaks:
+      - "m4_yearly"
+      - "m4_quarterly"
+      - "m4_monthly"
+      - "m4_weekly"
+      - "m4_daily"
+      - "m4_hourly"
+      - "electricity"
+      - "ett1"
+      - "ett2"
+      - "solar"
     domains_covered:
       Energy:
         in_pretraining: "true"
@@ -252,22 +311,38 @@ models:
   timesfm_2_0_500m:
     inherits_from: "TimesFM"
     checkpoint_id: "google/timesfm-2.0-500m-pytorch"
+    param_count: 500000000
     training_cutoff: "2024-12"
     finance_included: false
 
   TimesFM-2.5:
     inherits_from: "TimesFM"
     checkpoint_id: "google/timesfm-2.5-200m-pytorch"
+    param_count: 231289280
     training_cutoff: "2025-04"
     finance_included: false
+    domains_covered:
+      Nature/PostCutoff2025:
+        in_pretraining: "unknown"
+        verified: false
+        source_url: "https://huggingface.co/google/timesfm-2.5-200m-pytorch"
+        notes: "TimesFM 2.5 released 2025; coded unknown for the 2025-2026 recency stratum."
 
   TTM-R1-Pretrained:
     checkpoint_id: "ibm-granite/granite-timeseries-ttm-r1"
     family: "ttm"
+    param_count: 805280
     pretraining_corpus_name: "Monash + LibTS Non-Leaking Subset (~244M-1B points)"
     training_cutoff: "2024-04"
     finance_included: false
     agriculture_mandi_included: false
+    dataset_leaks:
+      - "electricity"
+      - "ett1"
+      - "ett2"
+      - "solar"
+      - "saugeen"
+      - "jena_weather"
     domains_covered:
       Energy:
         in_pretraining: "true"

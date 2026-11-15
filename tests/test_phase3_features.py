@@ -65,5 +65,13 @@ def test_dataset_features_and_similarity_outputs() -> None:
         assert not df_feat[col].isna().any(), f"NaN in dataset_features[{col}]"
 
     assert not df_sim["sim_distance"].isna().any()
-    assert set(df_sim["domain_in_pretraining"].unique()).issubset({"true", "false", "unknown"})
+    assert set(df_sim["domain_in_pretraining"].unique()).issubset({"true", "false", "unknown", "partial"})
     assert len(df_vif) == 7
+
+    # Audit regression check: exact registry family/param_count and distinct base-dataset features
+    assert int(df_sim.loc[df_sim["model"] == "Moirai2", "param_count"].iloc[0]) == 14_000_000
+    assert str(df_sim.loc[df_sim["model"] == "Moirai2", "model_family"].iloc[0]) == "moirai_2"
+    assert int(df_sim.loc[df_sim["model"] == "timesfm_2_0_500m", "param_count"].iloc[0]) == 500_000_000
+    assert int(df_sim.loc[df_sim["model"] == "TTM-R1-Pretrained", "param_count"].iloc[0]) == 805_280
+    base_first = df_feat.drop_duplicates("base_dataset")
+    assert not base_first.duplicated(subset=["trend_strength", "seasonal_strength", "forecastability"]).any()

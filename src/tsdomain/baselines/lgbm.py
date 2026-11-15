@@ -17,18 +17,13 @@ from tsdomain.baselines.run_baselines import (
     load_evaluation_windows_for_config,
 )
 from tsdomain.compute.profiler import profile_callable, summarize_profile_repeats
-from tsdomain.metrics.point import mape, mase, rmse, rmsse
-from tsdomain.metrics.probabilistic import (
-    coverage_and_width,
-    crps_weighted_quantile_loss,
-    interval_score,
-)
 from tsdomain.utils import (
     PROJECT_ROOT,
     QUANTILE_COLS,
     QUANTILE_LEVELS,
     ensure_dir,
     save_forecast_with_metadata,
+    score_forecast_window,
 )
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -38,36 +33,47 @@ def _build_lag_features(
     series_list: List[np.ndarray],
     n_lags: int,
     season_length: int,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Build pooled autoregressive lag + rolling mean/std + seasonal-phase features across windows."""
-    X_rows = []
-    y_vals = []
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Build temporal train/val lag + rolling mean/std + seasonal-phase features per series without overlap."""
+    X_tr, y_tr, X_va, y_va = [], [], [], []
     m = max(1, int(season_length))
     roll_w = min(max(3, m), n_lags)
 
-    for s_idx, arr in enumerate(series_list):
+    for arr in series_list:
         y = np.asarray(arr, dtype=float)
         y = y[np.isfinite(y)]
         if len(y) <= n_lags + 2:
             continue
-        # Z-score per series so pooled global LightGBM operates on common scale
-        mu = float(np.mean(y))
-        sd = max(float(np.std(y, ddof=1)), 1e-6)
+        n_avail = len(y) - n_lags
+        n_val_s = max(1, int(0.2 * n_avail))
+        split_t = len(y) - n_val_s
+        # Z-score using only the pre-validation prefix to avoid leaking validation targets into scale
+        mu = float(np.mean(y[:split_t]))
+        sd = max(float(np.std(y[:split_t], ddof=1)), 1e-6)
         z = (y - mu) / sd
 
         for t in range(n_lags, len(z)):
-            lags = z[t - n_lags : t][::-1]  # lag_1 .. lag_k
+            lags = z[t - n_lags : t][::-1]
             recent = z[t - roll_w : t]
-            rmean = float(np.mean(recent))
-            rstd = float(np.std(recent))
-            s_phase = float((t % m) / max(1.0, float(m)))
-            feat = np.concatenate([lags, [rmean, rstd, s_phase]])
-            X_rows.append(feat)
-            y_vals.append(float(z[t]))
+            feat = np.concatenate(
+                [lags, [float(np.mean(recent)), float(np.std(recent)), float((t % m) / m)]]
+            )
+            if t < split_t:
+                X_tr.append(feat)
+                y_tr.append(float(z[t]))
+            else:
+                X_va.append(feat)
+                y_va.append(float(z[t]))
 
-    if not X_rows:
-        return np.zeros((10, n_lags + 3)), np.zeros(10)
-    return np.asarray(X_rows, dtype=np.float32), np.asarray(y_vals, dtype=np.float32)
+    if not X_tr:
+        z_x, z_y = np.zeros((10, n_lags + 3), dtype=np.float32), np.zeros(10, dtype=np.float32)
+        return z_x, z_y, z_x[:2], z_y[:2]
+    return (
+        np.asarray(X_tr, dtype=np.float32),
+        np.asarray(y_tr, dtype=np.float32),
+        np.asarray(X_va or X_tr[-2:], dtype=np.float32),
+        np.asarray(y_va or y_tr[-2:], dtype=np.float32),
+    )
 
 
 def fit_and_forecast_lgbm_config(
@@ -83,18 +89,21 @@ def fit_and_forecast_lgbm_config(
     m = max(1, season_length)
     roll_w = min(max(3, m), n_lags)
 
-    train_series = [w["y_train"][-256:] for w in windows]
-    X_all, y_all = _build_lag_features(train_series, n_lags=n_lags, season_length=season_length)
+    # Use only the earliest training window per item_id so rolling w=0 and w=1 do not overlap in training/val
+    min_w = min(int(w["window_id"]) for w in windows)
+    # shortcut: caps training history at 256 points and 3200 lag rows for sub-second CPU budget parity, increase caps for offline training
+    train_series = [w["y_train"][-256:] for w in windows if int(w["window_id"]) == min_w]
+    X_tr, y_tr, X_va, y_va = _build_lag_features(train_series, n_lags=n_lags, season_length=season_length)
 
-    # Cap training rows at 4,000 for sub-second LightGBM tree fitting under budget parity
-    if len(X_all) > 4000:
-        rng = np.random.default_rng(seed)
-        idx = rng.choice(len(X_all), size=4000, replace=False)
-        X_all, y_all = X_all[idx], y_all[idx]
-
-    n_val = max(20, int(0.2 * len(X_all)))
-    X_tr, y_tr = X_all[:-n_val], y_all[:-n_val]
-    X_va, y_va = X_all[-n_val:], y_all[-n_val:]
+    rng = np.random.default_rng(seed)
+    if len(X_tr) > 3200:
+        idx_tr = rng.choice(len(X_tr), size=3200, replace=False)
+        X_tr, y_tr = X_tr[idx_tr], y_tr[idx_tr]
+    if len(X_va) > 800:
+        idx_va = rng.choice(len(X_va), size=800, replace=False)
+        X_va, y_va = X_va[idx_va], y_va[idx_va]
+    X_all = np.vstack([X_tr, X_va])
+    y_all = np.concatenate([y_tr, y_va])
 
     # Optuna hyperparameter search capped strictly to 50% of time_budget_s
     tune_budget = max(0.25, 0.5 * float(time_budget_s))
@@ -179,39 +188,18 @@ def fit_and_forecast_lgbm_config(
             for q, col in zip(QUANTILE_LEVELS, QUANTILE_COLS)
         }
 
-        rows = []
-        for step_idx in range(horizon):
-            r = {
-                "item_id": item_id,
-                "window_id": win_id,
-                "horizon_step": int(step_idx + 1),
-                "timestamp": pd.Timestamp(test_ts[step_idx]),
-                "y_true": float(y_test[step_idx]),
-                "mean": float(mean_pred[step_idx]),
-            }
-            for col in QUANTILE_COLS:
-                r[col] = float(quantiles[col][step_idx])
-            rows.append(r)
-        forecast_dfs.append(pd.DataFrame(rows))
-
-        q_map = {q: quantiles[f"q{q:.1f}"] for q in QUANTILE_LEVELS}
-        cov_info = coverage_and_width(y_test, quantiles["q0.1"], quantiles["q0.9"], y_train=y_train)
-        metric_rows.append(
-            {
-                "item_id": item_id,
-                "window_id": win_id,
-                "mase": mase(y_test, mean_pred, y_train, m=season_length),
-                "rmsse": rmsse(y_test, mean_pred, y_train, m=season_length),
-                "rmse": rmse(y_test, mean_pred),
-                "mape": mape(y_test, mean_pred),
-                "crps": crps_weighted_quantile_loss(y_test, q_map),
-                "coverage_80": cov_info["coverage"],
-                "width_80": cov_info["scaled_width"],
-                "interval_score_80": interval_score(
-                    y_test, quantiles["q0.1"], quantiles["q0.9"], alpha=0.2
-                ),
-            }
+        df_w, m_w = score_forecast_window(
+            w["item_id"],
+            w["window_id"],
+            y_train,
+            y_test,
+            w["test_timestamps"],
+            season_length,
+            mean_pred,
+            quantiles,
         )
+        forecast_dfs.append(df_w)
+        metric_rows.append(m_w)
 
     return pd.concat(forecast_dfs, ignore_index=True), pd.DataFrame(metric_rows)
 

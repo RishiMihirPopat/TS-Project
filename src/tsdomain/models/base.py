@@ -9,13 +9,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import norm
 
-from tsdomain.metrics.point import mape, mase, rmse, rmsse
-from tsdomain.metrics.probabilistic import (
-    coverage_and_width,
-    crps_weighted_quantile_loss,
-    interval_score,
-)
-from tsdomain.utils import QUANTILE_COLS, QUANTILE_LEVELS
+from tsdomain.utils import QUANTILE_COLS, QUANTILE_LEVELS, score_forecast_window
 
 
 def apply_common_scaling(
@@ -136,46 +130,17 @@ class TSFMBaseAdapter(ABC):
 
         for w, (mean_z, q_z), loc, sc in zip(windows, batch_preds, locs, scales):
             mean_pred, quantiles = invert_common_scaling(mean_z, q_z, loc, sc)
-            y_train = w["y_train"]
-            y_test = w["y_test"]
-            test_ts = w["test_timestamps"]
-            item_id = str(w["item_id"])
-            win_id = int(w["window_id"])
-
-            rows = []
-            for step_idx in range(horizon):
-                r = {
-                    "item_id": item_id,
-                    "window_id": win_id,
-                    "horizon_step": int(step_idx + 1),
-                    "timestamp": pd.Timestamp(test_ts[step_idx]),
-                    "y_true": float(y_test[step_idx]),
-                    "mean": float(mean_pred[step_idx]),
-                }
-                for col in QUANTILE_COLS:
-                    r[col] = float(quantiles[col][step_idx])
-                rows.append(r)
-            forecast_dfs.append(pd.DataFrame(rows))
-
-            q_map = {q: quantiles[f"q{q:.1f}"] for q in QUANTILE_LEVELS}
-            cov_info = coverage_and_width(
-                y_test, quantiles["q0.1"], quantiles["q0.9"], y_train=y_train
+            df_w, m_w = score_forecast_window(
+                w["item_id"],
+                w["window_id"],
+                w["y_train"],
+                w["y_test"],
+                w["test_timestamps"],
+                season_length,
+                mean_pred,
+                quantiles,
             )
-            metric_rows.append(
-                {
-                    "item_id": item_id,
-                    "window_id": win_id,
-                    "mase": mase(y_test, mean_pred, y_train, m=season_length),
-                    "rmsse": rmsse(y_test, mean_pred, y_train, m=season_length),
-                    "rmse": rmse(y_test, mean_pred),
-                    "mape": mape(y_test, mean_pred),
-                    "crps": crps_weighted_quantile_loss(y_test, q_map),
-                    "coverage_80": cov_info["coverage"],
-                    "width_80": cov_info["scaled_width"],
-                    "interval_score_80": interval_score(
-                        y_test, quantiles["q0.1"], quantiles["q0.9"], alpha=0.2
-                    ),
-                }
-            )
+            forecast_dfs.append(df_w)
+            metric_rows.append(m_w)
 
         return pd.concat(forecast_dfs, ignore_index=True), pd.DataFrame(metric_rows)

@@ -19,13 +19,14 @@ from seed.baseline_model import (
     fit_and_forecast_seed_models,
     load_air_passengers,
 )
-from tsdomain.metrics.point import mape, mase, rmse, rmsse
-from tsdomain.metrics.probabilistic import (
-    coverage_and_width,
-    crps_weighted_quantile_loss,
-    interval_score,
+from tsdomain.compute.profiler import DEFAULT_CPU_TDP_WATTS
+from tsdomain.metrics.point import mape, mase, rmse
+from tsdomain.utils import (
+    QUANTILE_COLS,
+    QUANTILE_LEVELS,
+    save_forecast_with_meta,
+    score_forecast_window,
 )
-from tsdomain.utils import QUANTILE_COLS, QUANTILE_LEVELS, save_forecast_with_meta
 
 CLASSICAL_MODEL_NAMES: List[str] = [
     "Naive",
@@ -220,41 +221,12 @@ def forecast_classical_window(
     model_name: str,
 ) -> Tuple[pd.DataFrame, Dict[str, float]]:
     """Forecast a single evaluation window and return forecast rows + window metrics."""
-    horizon = len(y_test)
     mean_pred, quantiles = forecast_classical_single_series(
-        y_train, horizon=horizon, season_length=season_length, model_name=model_name
+        y_train, horizon=len(y_test), season_length=season_length, model_name=model_name
     )
-
-    rows = []
-    for step_idx in range(horizon):
-        row = {
-            "item_id": str(item_id),
-            "window_id": int(window_id),
-            "horizon_step": int(step_idx + 1),
-            "timestamp": pd.Timestamp(test_timestamps[step_idx]),
-            "y_true": float(y_test[step_idx]),
-            "mean": float(mean_pred[step_idx]),
-        }
-        for col in QUANTILE_COLS:
-            row[col] = float(quantiles[col][step_idx])
-        rows.append(row)
-    df_win = pd.DataFrame(rows)
-
-    q_map = {q: quantiles[f"q{q:.1f}"] for q in QUANTILE_LEVELS}
-    cov_info = coverage_and_width(y_test, quantiles["q0.1"], quantiles["q0.9"], y_train=y_train)
-    metrics = {
-        "item_id": str(item_id),
-        "window_id": int(window_id),
-        "mase": mase(y_test, mean_pred, y_train, m=season_length),
-        "rmsse": rmsse(y_test, mean_pred, y_train, m=season_length),
-        "rmse": rmse(y_test, mean_pred),
-        "mape": mape(y_test, mean_pred),
-        "crps": crps_weighted_quantile_loss(y_test, q_map),
-        "coverage_80": cov_info["coverage"],
-        "width_80": cov_info["scaled_width"],
-        "interval_score_80": interval_score(y_test, quantiles["q0.1"], quantiles["q0.9"], alpha=0.2),
-    }
-    return df_win, metrics
+    return score_forecast_window(
+        item_id, window_id, y_train, y_test, test_timestamps, season_length, mean_pred, quantiles
+    )
 
 
 def run_classical_on_dataset(
@@ -288,7 +260,7 @@ def run_classical_on_dataset(
             for idx, w in enumerate(windows):
                 y_tr = np.asarray(w["y_train"], dtype=float)
                 y_tr = y_tr[~np.isnan(y_tr)]
-                # Cap training history for classical fit to last max(512, 4*m) observations for speed
+                # shortcut: caps training history at max(512, 4*m) and season_length at 24 for AutoETS/AutoARIMA speed, remove cap for unbounded state-space fits
                 max_hist = max(512, 4 * m)
                 if len(y_tr) > max_hist:
                     y_tr = y_tr[-max_hist:]
@@ -348,40 +320,16 @@ def run_classical_on_dataset(
     for idx, win in enumerate(windows):
         if idx in batched_preds:
             mean_pred, quantiles = batched_preds[idx]
-            y_train = win["y_train"]
-            y_test = win["y_test"]
-            test_timestamps = win["test_timestamps"]
-            item_id = win["item_id"]
-            window_id = win["window_id"]
-            horizon = len(y_test)
-            rows = []
-            for step_idx in range(horizon):
-                row = {
-                    "item_id": str(item_id),
-                    "window_id": int(window_id),
-                    "horizon_step": int(step_idx + 1),
-                    "timestamp": pd.Timestamp(test_timestamps[step_idx]),
-                    "y_true": float(y_test[step_idx]),
-                    "mean": float(mean_pred[step_idx]),
-                }
-                for col in QUANTILE_COLS:
-                    row[col] = float(quantiles[col][step_idx])
-                rows.append(row)
-            df_w = pd.DataFrame(rows)
-            q_map = {q: quantiles[f"q{q:.1f}"] for q in QUANTILE_LEVELS}
-            cov_info = coverage_and_width(y_test, quantiles["q0.1"], quantiles["q0.9"], y_train=y_train)
-            m_w = {
-                "item_id": str(item_id),
-                "window_id": int(window_id),
-                "mase": mase(y_test, mean_pred, y_train, m=season_length),
-                "rmsse": rmsse(y_test, mean_pred, y_train, m=season_length),
-                "rmse": rmse(y_test, mean_pred),
-                "mape": mape(y_test, mean_pred),
-                "crps": crps_weighted_quantile_loss(y_test, q_map),
-                "coverage_80": cov_info["coverage"],
-                "width_80": cov_info["scaled_width"],
-                "interval_score_80": interval_score(y_test, quantiles["q0.1"], quantiles["q0.9"], alpha=0.2),
-            }
+            df_w, m_w = score_forecast_window(
+                win["item_id"],
+                win["window_id"],
+                win["y_train"],
+                win["y_test"],
+                win["test_timestamps"],
+                season_length,
+                mean_pred,
+                quantiles,
+            )
         else:
             df_w, m_w = forecast_classical_window(
                 item_id=win["item_id"],
@@ -398,7 +346,7 @@ def run_classical_on_dataset(
     runtime_s = time.perf_counter() - t0
     ram_after = proc.memory_info().rss / (1024 * 1024)
     peak_ram_mb = max(ram_before, ram_after)
-    energy_kwh = (runtime_s * 15.0) / 3_600_000.0
+    energy_kwh = (runtime_s * DEFAULT_CPU_TDP_WATTS) / 3_600_000.0
 
     full_forecast_df = pd.concat(all_forecast_dfs, ignore_index=True)
     metrics_df = pd.DataFrame(all_metric_rows)

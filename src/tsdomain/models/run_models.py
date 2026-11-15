@@ -61,28 +61,25 @@ def profile_classical_baselines_on_configs(
         for m_name in classical_models:
             meta_file = forecasts_root / m_name / f"{safe_cfg}.parquet.meta.json"
             if meta_file.exists():
+                # shortcut: reuses Phase 2 cached runtime when .meta.json exists, delete .meta.json to re-time
                 meta = json.loads(meta_file.read_text(encoding="utf-8"))
                 infer_s = max(float(meta.get("runtime_s", 0.001)), 1e-5)
                 peak_ram = float(meta.get("peak_ram_mb", 120.0))
-                rep_profiles = []
-                for j in range(max(1, n_repeats)):
-                    jitter = 1.0 + 0.015 * (j - 1)
-                    s_j = infer_s * jitter
-                    wh_j = (DEFAULT_CPU_TDP_WATTS * s_j) / 3600.0
-                    rep_profiles.append(
-                        {
-                            "load_time_s": 0.0,
-                            "infer_time_s_total": s_j,
-                            "infer_time_ms_per_point": (s_j * 1000.0) / max(1, n_forecast_pts),
-                            "peak_ram_mb": peak_ram,
-                            "peak_vram_mb": 0.0,
-                            "energy_wh_total": wh_j,
-                            "energy_mwh_per_1k_points": (wh_j * 1e6) / max(1, n_forecast_pts),
-                            "energy_source": "tdp_estimate",
-                            "device": "cpu",
-                            "n_forecast_points": n_forecast_pts,
-                        }
-                    )
+                wh_tot = (DEFAULT_CPU_TDP_WATTS * infer_s) / 3600.0
+                rep_profiles = [
+                    {
+                        "load_time_s": 0.0,
+                        "infer_time_s_total": infer_s,
+                        "infer_time_ms_per_point": (infer_s * 1000.0) / max(1, n_forecast_pts),
+                        "peak_ram_mb": peak_ram,
+                        "peak_vram_mb": 0.0,
+                        "energy_wh_total": wh_tot,
+                        "energy_mwh_per_1k_points": (wh_tot * 1e6) / max(1, n_forecast_pts),
+                        "energy_source": "tdp_estimate_cached",
+                        "device": "cpu",
+                        "n_forecast_points": n_forecast_pts,
+                    }
+                ]
             else:
                 rep_profiles = []
                 for _ in range(max(1, n_repeats)):
@@ -148,6 +145,7 @@ def run_phase4_models(
                 if r_idx == 0:
                     w_sub = windows
                 else:
+                    # shortcut: sub-batches repeats 2..N to 20 windows for CPU speed, run full windows on GPU
                     w_sub = (
                         windows[:20]
                         if (adapter.model_id == "Chronos_small" and len(windows) > 20)
@@ -165,11 +163,12 @@ def run_phase4_models(
                 if r_idx == 0:
                     fc_df, m_df = fc_sub, m_sub
                 else:
-                    # Scale total config time/energy from measured per-point rate when sub-batching
                     scale_factor = float(n_pts) / float(max(1, n_pts_sub))
                     prof["infer_time_s_total"] = float(prof["infer_time_s_total"]) * scale_factor
                     prof["energy_wh_total"] = float(prof["energy_wh_total"]) * scale_factor
                     prof["n_forecast_points"] = n_pts
+                    if len(w_sub) < len(windows):
+                        prof["energy_source"] = f"{prof['energy_source']}_subwindow_scaled"
                 prof["load_time_s"] = load_sec
                 rep_profiles.append(prof)
 

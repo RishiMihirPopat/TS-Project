@@ -12,9 +12,8 @@ import numpy as np
 import torch
 
 
+# shortcut: shims jaxtyping.PyTree so uni2ts loads without jax installed, remove if jax is added to dependencies
 class _PyTreeShim:
-    """Subscriptable shim so `uni2ts` imports cleanly on PyTorch-only hosts without `jax`."""
-
     def __class_getitem__(cls, item: typing.Any) -> typing.Any:
         return typing.Any
 

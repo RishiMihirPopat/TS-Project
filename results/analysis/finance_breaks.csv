@@ -1,7 +1,7 @@
-event_label,labelled_date,labelled_trading_idx,detected_break_date,detected_break_idx,trading_day_distance,recovered_within_30d
-Asian_Financial_Crisis_MiniCrash,1997-10-27,1978,1998-02-09,2049,71,False
-Sept11_Market_Reopening,2001-09-17,2954,2001-09-04,2949,5,True
-Lehman_Brothers_GFC,2008-09-15,4715,2008-09-08,4710,5,True
-US_Debt_Downgrade_Eurozone,2011-08-08,5445,2011-08-02,5441,4,True
-COVID19_Crash,2020-03-09,7604,2020-02-27,7597,7,True
-Fed_Rate_Hike_Cycle_Start,2022-03-16,8114,2022-01-10,8069,45,False
+event_label,labelled_date,labelled_trading_idx,detected_break_date,detected_break_idx,trading_day_distance,recovered_within_30d,n_total_pelt_breaks
+Asian_Financial_Crisis_MiniCrash,1997-10-27,1978,1998-02-09,2049,71,False,91
+Sept11_Market_Reopening,2001-09-17,2954,2001-09-04,2949,5,True,91
+Lehman_Brothers_GFC,2008-09-15,4715,2008-09-08,4710,5,True,91
+US_Debt_Downgrade_Eurozone,2011-08-08,5445,2011-08-02,5441,4,True,91
+COVID19_Crash,2020-03-09,7604,2020-02-27,7597,7,True,91
+Fed_Rate_Hike_Cycle_Start,2022-03-16,8114,2022-01-10,8069,45,False,91

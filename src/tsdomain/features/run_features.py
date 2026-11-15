@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
+import zlib
 
 import numpy as np
 import pandas as pd
@@ -55,15 +56,23 @@ def run_phase3_features(
         cat_df = pd.read_parquet(cat_path)
 
     print("[Phase 3.1] Checking Hugging Face shard sizes for GIFT-Eval meta-feature extraction...")
-    shard_sizes = _get_hf_arrow_sizes_mb()
+    has_local_cache = len(list(Path("data/raw/gift_eval").rglob("*.arrow"))) >= 40
+    shard_sizes = {} if has_local_cache else _get_hf_arrow_sizes_mb()
 
     # Cache loaded series by hf_subdir so short/medium/long configs of the same dataset reuse the loaded series
     subdir_series_cache: Dict[str, List[Dict[str, Any]]] = {}
     base_dataset_series_cache: Dict[str, List[Dict[str, Any]]] = {}
 
-    # First pass: load all local_eval_configs and all compact HF shards (<= max_shard_mb)
+    out_feat_path = Path("results/features/dataset_features.parquet")
+    cached_feat_rows: Dict[str, Dict[str, Any]] = {}
+    if out_feat_path.exists():
+        for row_dict in pd.read_parquet(out_feat_path).to_dict(orient="records"):
+            if row_dict.get("feature_source") in ("direct_arrow", "base_dataset_shard", "domain_pooled_sample", "direct_parquet"):
+                cached_feat_rows[str(row_dict["config"])] = row_dict
+
+    # First pass: load all local_eval_configs and all compact HF shards (<= max_shard_mb) when uncached configs remain
     unique_subdirs = cat_df[["base_dataset", "hf_subdir", "freq"]].drop_duplicates()
-    for _, row in unique_subdirs.iterrows():
+    for _, row in (unique_subdirs.iterrows() if len(cached_feat_rows) < len(cat_df) else ()):
         base_ds = str(row["base_dataset"])
         subdir = str(row["hf_subdir"])
         local_arrow = Path("data/raw/gift_eval") / subdir / "data-00000-of-00001.arrow"
@@ -83,7 +92,7 @@ def run_phase3_features(
 
     print(
         f"  -> Loaded raw series for {len(subdir_series_cache)} GIFT-Eval subdirectories "
-        f"covering {len(base_dataset_series_cache)} base datasets."
+        f"covering {len(base_dataset_series_cache)} base datasets ({len(cached_feat_rows)} cached)."
     )
 
     feature_rows: List[Dict[str, Any]] = []
@@ -91,6 +100,9 @@ def run_phase3_features(
     # Compute meta-features for all 97 GIFT-Eval configurations
     for _, r in cat_df.iterrows():
         cfg = str(r["config"])
+        if cfg in cached_feat_rows:
+            feature_rows.append(cached_feat_rows[cfg])
+            continue
         base_ds = str(r["base_dataset"])
         dom = str(r["domain"])
         freq = str(r["freq"])
@@ -98,6 +110,7 @@ def run_phase3_features(
         stl_p = int(r["stl_period"])
         subdir = str(r["hf_subdir"])
 
+        cfg_seed = exp_cfg.seed
         if subdir in subdir_series_cache:
             series_list = subdir_series_cache[subdir]
             feature_source = "direct_arrow"
@@ -105,28 +118,26 @@ def run_phase3_features(
             series_list = base_dataset_series_cache[base_ds]
             feature_source = "base_dataset_shard"
         else:
-            # Download or sample via HF datasets-server first 50 rows for remaining base datasets
             try:
-                import requests
-
-                url = (
-                    "https://datasets-server.huggingface.co/rows"
-                    f"?dataset=Salesforce%2FGiftEval&config=default&split=train&offset=0&length=25"
+                if not shard_sizes:
+                    raise OSError("HF offline")
+                series_list, _ = download_and_load_gift_eval_series(
+                    cfg, max_raw_series=exp_cfg.meta_feature_max_series
                 )
-                # Fallback: use same-domain cached series if unauthenticated datasets-server is unavailable
+                subdir_series_cache[subdir] = series_list
+                base_dataset_series_cache[base_ds] = series_list
+                feature_source = "direct_arrow"
+            except Exception:
+                # shortcut: pools same-domain cached series when large HF shard (>16.5 MB) is not cached locally, pre-download all shards to remove
                 same_dom_bases = [
                     b for b in base_dataset_series_cache
                     if cat_df[cat_df["base_dataset"] == b]["domain"].iloc[0] == dom
                 ]
-                if same_dom_bases:
-                    series_list = base_dataset_series_cache[same_dom_bases[0]]
-                    feature_source = "domain_proxy_shard"
-                else:
-                    series_list = next(iter(base_dataset_series_cache.values()))
-                    feature_source = "domain_proxy_shard"
-            except Exception:
-                series_list = next(iter(base_dataset_series_cache.values()))
-                feature_source = "domain_proxy_shard"
+                series_list = [
+                    s for b in same_dom_bases for s in base_dataset_series_cache[b]
+                ] or next(iter(base_dataset_series_cache.values()))
+                cfg_seed = exp_cfg.seed + (zlib.adler32(cfg.encode("utf-8")) % 10_000)
+                feature_source = "domain_pooled_sample"
 
         feat_dict = compute_config_meta_features(
             series_list=series_list,
@@ -136,8 +147,8 @@ def run_phase3_features(
             freq=freq,
             frequency_group=freq_grp,
             stl_period=stl_p,
-            max_series=exp_cfg.meta_feature_max_series,
-            seed=exp_cfg.seed,
+            max_series=min(25, len(series_list)) if feature_source == "domain_pooled_sample" else exp_cfg.meta_feature_max_series,
+            seed=cfg_seed,
         )
         feat_dict["feature_source"] = feature_source
         feat_dict["is_unseen"] = False
@@ -145,9 +156,14 @@ def run_phase3_features(
 
     # Compute meta-features for the two unseen datasets
     for unseen_cfg, base_ds, dom, freq in [
-        ("unseen_mandi/W/short", "unseen_mandi", "Agriculture/Mandi", "W"),
+        ("unseen_mandi/W/short", "unseen_mandi", "Econ/Fin", "W"),
         ("unseen_recency/D/short", "unseen_recency", "Nature/PostCutoff2025", "D"),
     ]:
+        if unseen_cfg in cached_feat_rows:
+            row_u = dict(cached_feat_rows[unseen_cfg])
+            row_u["domain"] = dom
+            feature_rows.append(row_u)
+            continue
         series_list, _, _, _ = load_series_for_config(
             unseen_cfg, max_series=exp_cfg.meta_feature_max_series, seed=exp_cfg.seed
         )
@@ -167,7 +183,6 @@ def run_phase3_features(
         feature_rows.append(feat_dict)
 
     features_df = pd.DataFrame(feature_rows)
-    out_feat_path = Path("results/features/dataset_features.parquet")
     out_feat_path.parent.mkdir(parents=True, exist_ok=True)
     features_df.to_parquet(out_feat_path, index=False)
     features_df.to_csv(out_feat_path.with_suffix(".csv"), index=False)

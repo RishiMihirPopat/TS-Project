@@ -18,7 +18,7 @@ import requests
 
 AGMARKNET_RAW_BASE = "https://raw.githubusercontent.com/iancovert/Agmarknet/master"
 
-# High-coverage commodities and years (2012-2016 = 5 full years = 260 weeks)
+# High-coverage commodities and years (2012-2016 = 5 full years = 261 weeks)
 MANDI_COMMODITIES: List[str] = [
     "Wheat",
     "Maize",
@@ -128,7 +128,7 @@ def build_unseen_mandi_dataset(
         )
 
     all_wk = pd.concat(weekly_frames, ignore_index=True)
-    # Full weekly grid from 2012-01-02 to 2016-12-26 (260 weeks)
+    # Full weekly grid from 2012-01-02 to 2016-12-26 (261 weeks)
     full_grid = pd.date_range("2012-01-02", "2016-12-26", freq="W-MON")
 
     # Rank series by number of observed weeks on the canonical grid

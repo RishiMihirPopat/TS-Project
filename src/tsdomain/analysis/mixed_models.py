@@ -12,6 +12,7 @@ import statsmodels.formula.api as smf
 from scipy import stats
 from statsmodels.stats.multitest import multipletests
 
+from tsdomain.config import load_and_validate_configs
 from tsdomain.utils import PROJECT_ROOT, ensure_dir
 
 CHAR_COLS = [
@@ -95,6 +96,7 @@ def build_phase6_analysis_dataset() -> pd.DataFrame:
         "domain_in_pretraining",
         "domain_in_pretraining_optimistic",
         "domain_in_pretraining_conservative",
+        "dataset_leak",
         "claim_verified",
         "finance_included",
         "training_cutoff",
@@ -102,50 +104,15 @@ def build_phase6_analysis_dataset() -> pd.DataFrame:
         "sim_distance_knn",
     ]
     combined = combined.merge(
-        sim_df[sim_keep],
+        sim_df[[c for c in sim_keep if c in sim_df.columns]],
         on=["model", "config"],
         how="inner",
     )
 
-    param_map = {
-        "Chronos_small": 46_000_000,
-        "Chronos_base": 200_000_000,
-        "Chronos_large": 710_000_000,
-        "chronos_bolt_small": 48_000_000,
-        "chronos_bolt_base": 205_000_000,
-        "Chronos-2": 120_000_000,
-        "Moirai_small": 13_827_528,
-        "Moirai_base": 91_000_000,
-        "Moirai_large": 311_000_000,
-        "Moirai-2.0-R-small": 14_000_000,
-        "TimesFM": 200_000_000,
-        "TimesFM-2.0": 500_000_000,
-        "TimesFM-2.5": 231_289_280,
-        "TTM-R2-Pretrained": 805_280,
-        "VisionTS": 86_000_000,
-        "Sundial_base": 128_000_000,
-        "Lag-Llama": 29_000_000,
-    }
-    family_map = {
-        "Chronos_small": "chronos_t5",
-        "Chronos_base": "chronos_t5",
-        "Chronos_large": "chronos_t5",
-        "chronos_bolt_small": "chronos_bolt",
-        "chronos_bolt_base": "chronos_bolt",
-        "Chronos-2": "chronos_2",
-        "Moirai_small": "moirai_1",
-        "Moirai_base": "moirai_1",
-        "Moirai_large": "moirai_1",
-        "Moirai-2.0-R-small": "moirai_2",
-        "TimesFM": "timesfm",
-        "TimesFM-2.0": "timesfm",
-        "TimesFM-2.5": "timesfm",
-        "TTM-R2-Pretrained": "ttm",
-        "VisionTS": "visionts",
-    }
+    reg_models = load_and_validate_configs()["pretraining_registry"].models
     domain_share_by_family = {
-        "chronos_t5": {"Energy": 0.30, "Transport": 0.25, "Nature": 0.20, "Web/CloudOps": 0.13, "Sales": 0.12, "Healthcare": 0.0, "Econ/Fin": 0.0},
-        "chronos_bolt": {"Energy": 0.30, "Transport": 0.25, "Nature": 0.20, "Web/CloudOps": 0.13, "Sales": 0.12, "Healthcare": 0.0, "Econ/Fin": 0.0},
+        "chronos_t5": {"Energy": 0.29, "Transport": 0.24, "Nature": 0.20, "Web/CloudOps": 0.13, "Sales": 0.12, "Healthcare": 0.0, "Econ/Fin": 0.02},
+        "chronos_bolt": {"Energy": 0.29, "Transport": 0.24, "Nature": 0.20, "Web/CloudOps": 0.13, "Sales": 0.12, "Healthcare": 0.0, "Econ/Fin": 0.02},
         "chronos_2": {"Energy": 0.26, "Transport": 0.22, "Nature": 0.20, "Web/CloudOps": 0.14, "Sales": 0.12, "Econ/Fin": 0.04, "Healthcare": 0.02},
         "moirai_1": {"Energy": 0.34, "Nature": 0.28, "Transport": 0.18, "Web/CloudOps": 0.10, "Sales": 0.05, "Econ/Fin": 0.03, "Healthcare": 0.02},
         "moirai_2": {"Energy": 0.32, "Nature": 0.26, "Transport": 0.18, "Web/CloudOps": 0.12, "Sales": 0.06, "Econ/Fin": 0.04, "Healthcare": 0.02},
@@ -154,54 +121,77 @@ def build_phase6_analysis_dataset() -> pd.DataFrame:
     }
 
     combined["model_family"] = combined["model"].map(
-        lambda m: family_map.get(str(m), str(m).split("_")[0].split("-")[0].lower())
+        lambda m: str(reg_models[str(m)].family)
+        if str(m) in reg_models and reg_models[str(m)].family
+        else str(m).split("_")[0].split("-")[0].lower()
     )
-    combined["param_count"] = combined["model"].map(lambda m: float(param_map.get(str(m), 50_000_000)))
-    combined["sim_binary"] = combined["domain_in_pretraining_conservative"].astype(int)
-    combined["sim_binary_optimistic"] = combined["domain_in_pretraining_optimistic"].astype(int)
+    combined["param_count"] = combined["model"].map(
+        lambda m: float(reg_models[str(m)].param_count)
+        if str(m) in reg_models and reg_models[str(m)].param_count
+        else 50_000_000.0
+    )
+    combined["sim_binary"] = combined["domain_in_pretraining"].map(
+        lambda x: 1.0 if str(x) == "true" else (0.5 if str(x) == "partial" else 0.0)
+    )
+    combined["sim_binary_optimistic"] = combined["domain_in_pretraining_optimistic"].astype(float)
 
     def _compute_share(row: pd.Series) -> float:
-        if str(row["domain_in_pretraining"]) == "false":
+        dip = str(row["domain_in_pretraining"])
+        if dip == "false":
             return 0.0
         fam = str(row["model_family"])
         dom = str(row["domain"])
         sh = domain_share_by_family.get(fam, {}).get(dom, 0.05)
-        if str(row["domain_in_pretraining"]) == "unknown":
+        if dip in ("unknown", "partial"):
             return 0.5 * sh
         return float(sh)
 
     def _compute_stratum(row: pd.Series) -> str:
         cfg = str(row["config"])
-        if cfg.startswith("unseen_recency"):
-            return "recency"
         dip = str(row["domain_in_pretraining"])
-        if dip == "false" or cfg.startswith("unseen_mandi"):
+        if cfg.startswith("unseen_recency"):
+            return "unknown_recency" if dip == "unknown" else "recency"
+        if cfg.startswith("unseen_mandi"):
+            return "unseen_dataset_overlapping_domain"
+        if dip == "false":
             return "out-of-domain"
-        if dip == "unknown" or float(row["sim_share"]) < 0.08:
+        if dip in ("unknown", "partial") or float(row["sim_share"]) < 0.08:
             return "partial-overlap"
         return "in-domain"
 
     combined["sim_share"] = combined.apply(_compute_share, axis=1)
     combined["sim_stratum"] = combined.apply(_compute_stratum, axis=1)
-    # Mark well-known GIFT-Eval benchmark datasets that overlapped pretraining pools (for Phase 8 leakage check)
     leak_bases = {"ett1", "ett2", "solar", "saugeen", "kdd_cup_2018", "electricity"}
-    combined["in_pretraining_pool"] = (
-        combined["base_dataset"].isin(leak_bases) & (combined["sim_binary"] == 1)
-    ).astype(int)
-
-    # Compute response variables
-    combined["delta_mase_raw"] = (
-        combined["best_classical_mase"] - combined["mase"]
-    ) / combined["best_classical_mase"]
-    # Winsorize extreme negative outliers (< -2.0) where a model catastrophically diverges on a short series
-    combined["delta_mase"] = combined["delta_mase_raw"].clip(lower=-2.0, upper=1.0)
-    combined["log_mase_ratio"] = np.log(
-        combined["best_classical_mase"] / np.maximum(combined["mase"], 1e-6)
+    leak_flag = (
+        combined["test_data_leakage_flag"].eq(True)
+        if "test_data_leakage_flag" in combined.columns
+        else True
     )
-    combined["delta_crps"] = (
-        (combined["best_classical_crps"] - combined["crps"]) / combined["best_classical_crps"]
-    ).clip(lower=-2.0, upper=1.0)
-    combined["tsfm_wins"] = (combined["delta_mase_raw"] > 0.0).astype(int)
+    reg_leak = (
+        combined["dataset_leak"].astype(bool)
+        if "dataset_leak" in combined.columns
+        else combined["base_dataset"].isin(leak_bases)
+    )
+    combined["dataset_leak"] = (
+        (leak_flag & reg_leak) | (combined["base_dataset"].isin(leak_bases) & leak_flag)
+    ).astype(int)
+    combined["in_pretraining_pool"] = combined["dataset_leak"]
+    combined["source_local"] = (combined["source"] == "local_unseen").astype(int)
+
+    # Response variable: y = log(MASE_model / MASE_classical); report (1 - exp(y)) * 100 as % gain
+    combined["mase_ratio"] = (
+        combined["mase"] / np.maximum(combined["best_classical_mase"], 1e-6)
+    ).clip(lower=0.05, upper=10.0)
+    combined["y_log_mase_ratio"] = np.log(combined["mase_ratio"])
+    combined["pct_gain"] = (1.0 - np.exp(combined["y_log_mase_ratio"])) * 100.0
+    combined["delta_mase_raw"] = (1.0 - combined["mase"] / np.maximum(combined["best_classical_mase"], 1e-6))
+    # Orient delta_mase = -y_log_mase_ratio = log(MASE_classical / MASE_model) so positive = TSFM improvement
+    combined["delta_mase"] = -combined["y_log_mase_ratio"]
+    combined["log_mase_ratio"] = combined["delta_mase"]
+    combined["delta_crps"] = -np.log(
+        (combined["crps"] / np.maximum(combined["best_classical_crps"], 1e-6)).clip(lower=0.05, upper=10.0)
+    )
+    combined["tsfm_wins"] = (combined["y_log_mase_ratio"] < 0.0).astype(int)
     combined["log_params"] = np.log10(np.maximum(combined["param_count"].astype(float), 1.0))
 
     # Standardize continuous predictors (mean 0, SD 1)
@@ -224,12 +214,12 @@ def _fit_crossed_mixedlm(
     df: pd.DataFrame,
     reml: bool = False,
 ):
-    """Fit a linear mixed-effects model with crossed random intercepts (1|base_dataset) + (1|model_family)."""
-    # Use a single top-level group with variance components for both base_dataset and model_family
+    """Fit MixedLM with random intercepts (1|base_dataset) + (1|config) + (1|model_family)."""
     df_fit = df.copy()
     df_fit["_all_group"] = 1
     vc = {
         "base_dataset": "0 + C(base_dataset)",
+        "config": "0 + C(config)",
         "model_family": "0 + C(model_family)",
     }
     with warnings.catch_warnings():
@@ -249,24 +239,25 @@ def _fit_crossed_mixedlm(
 
 def compute_nakagawa_r2(res, df: pd.DataFrame) -> Tuple[float, float, Dict[str, float]]:
     """Compute Nakagawa & Schielzeth marginal R^2, conditional R^2, and ICC breakdown."""
-    # Fixed-effects variance
     fe_params = res.fe_params
-    exog_names = list(fe_params.index)
     exog_mat = res.model.exog
     fe_pred = np.dot(exog_mat, fe_params.to_numpy())
     var_fixed = float(np.var(fe_pred, ddof=1)) if len(fe_pred) > 1 else 0.0
 
-    # Random-effects variance components (vcomp)
+    # Random-effects variance components (vcomp in alphabetical order of vc keys: base_dataset, config, model_family)
     vcomp = np.asarray(res.vcomp, dtype=float)
     var_dataset = float(max(0.0, vcomp[0])) if len(vcomp) >= 1 else 0.0
-    var_family = float(max(0.0, vcomp[1])) if len(vcomp) >= 2 else 0.0
+    var_config = float(max(0.0, vcomp[1])) if len(vcomp) >= 3 else 0.0
+    var_family = float(max(0.0, vcomp[-1])) if len(vcomp) >= 2 else 0.0
     var_resid = float(max(1e-12, res.scale))
 
-    var_total = var_fixed + var_dataset + var_family + var_resid
+    var_re = var_dataset + var_config + var_family
+    var_total = var_fixed + var_re + var_resid
     r2_marginal = var_fixed / var_total
-    r2_conditional = (var_fixed + var_dataset + var_family) / var_total
-    icc_dataset = var_dataset / (var_dataset + var_family + var_resid)
-    icc_family = var_family / (var_dataset + var_family + var_resid)
+    r2_conditional = (var_fixed + var_re) / var_total
+    icc_dataset = (var_dataset + var_config) / (var_re + var_resid)
+    icc_config = var_config / (var_re + var_resid)
+    icc_family = var_family / (var_re + var_resid)
 
     return (
         float(r2_marginal),
@@ -274,9 +265,11 @@ def compute_nakagawa_r2(res, df: pd.DataFrame) -> Tuple[float, float, Dict[str, 
         {
             "var_fixed": var_fixed,
             "var_base_dataset": var_dataset,
+            "var_config": var_config,
             "var_model_family": var_family,
             "var_residual": var_resid,
             "icc_base_dataset": icc_dataset,
+            "icc_config": icc_config,
             "icc_model_family": icc_family,
         },
     )
@@ -286,26 +279,26 @@ MODEL_FORMULAS: Dict[str, str] = {
     "M0": "delta_mase ~ 1",
     "M1": (
         "delta_mase ~ z_forecastability + z_seasonal_strength + z_trend_strength "
-        "+ z_hurst + z_stability + z_lumpiness + z_log_length + z_log_params + C(frequency_group)"
+        "+ z_hurst + z_stability + z_lumpiness + z_log_length + z_log_params + dataset_leak + source_local + C(frequency_group)"
     ),
     "M2a": (
         "delta_mase ~ z_forecastability + z_seasonal_strength + z_trend_strength "
-        "+ z_hurst + z_stability + z_lumpiness + z_log_length + z_log_params + C(frequency_group) "
+        "+ z_hurst + z_stability + z_lumpiness + z_log_length + z_log_params + dataset_leak + source_local + C(frequency_group) "
         "+ sim_binary + z_sim_share"
     ),
     "M2b": (
         "delta_mase ~ z_forecastability + z_seasonal_strength + z_trend_strength "
-        "+ z_hurst + z_stability + z_lumpiness + z_log_length + z_log_params + C(frequency_group) "
+        "+ z_hurst + z_stability + z_lumpiness + z_log_length + z_log_params + dataset_leak + source_local + C(frequency_group) "
         "+ z_sim_distance"
     ),
     "M2": (
         "delta_mase ~ z_forecastability + z_seasonal_strength + z_trend_strength "
-        "+ z_hurst + z_stability + z_lumpiness + z_log_length + z_log_params + C(frequency_group) "
+        "+ z_hurst + z_stability + z_lumpiness + z_log_length + z_log_params + dataset_leak + source_local + C(frequency_group) "
         "+ sim_binary + z_sim_share + z_sim_distance"
     ),
     "M3": (
         "delta_mase ~ z_forecastability + z_seasonal_strength + z_trend_strength "
-        "+ z_hurst + z_stability + z_lumpiness + z_log_length + z_log_params + C(frequency_group) "
+        "+ z_hurst + z_stability + z_lumpiness + z_log_length + z_log_params + dataset_leak + source_local + C(frequency_group) "
         "+ sim_binary + z_sim_share + z_sim_distance "
         "+ z_sim_distance:z_forecastability + z_sim_distance:z_seasonal_strength + z_sim_distance:z_log_length"
     ),
@@ -317,45 +310,80 @@ def cluster_bootstrap_fixed_effects(
     df: pd.DataFrame,
     n_boot: int = 1000,
     seed: int = 20260410,
+    res_reml=None,
 ) -> Dict[str, Tuple[float, float]]:
-    """Compute 95% confidence intervals by resampling base_dataset clusters (B = 1000)."""
+    """Compute 95% confidence intervals by resampling base_dataset clusters under MixedLM GLS (B = 1000)."""
+    if res_reml is None:
+        res_reml = _fit_crossed_mixedlm(formula, df, reml=True)
+
+    fe_names = list(res_reml.fe_params.index)
+    p = len(fe_names)
+    X_full = np.asarray(res_reml.model.exog, dtype=float)
+    y_full = np.asarray(res_reml.model.endog, dtype=float)
+    Z_fam_full = pd.get_dummies(df["model_family"], dtype=float).to_numpy()
+    n_fam = Z_fam_full.shape[1]
+
+    vcomp = np.asarray(res_reml.vcomp, dtype=float)
+    var_ds = max(float(vcomp[0]) + (float(vcomp[1]) if len(vcomp) >= 3 else 0.0), 1e-6)
+    var_fam = max(float(vcomp[-1]) if len(vcomp) >= 2 else 0.01, 1e-6)
+    var_res = max(float(res_reml.scale), 1e-6)
+
     rng = np.random.default_rng(seed)
     clusters = df["base_dataset"].unique()
     n_clusters = len(clusters)
-    cluster_to_df = {c: grp for c, grp in df.groupby("base_dataset")}
+    cluster_indices = {c: np.flatnonzero(df["base_dataset"].to_numpy() == c) for c in clusters}
 
-    # Fast OLS design matrix extraction per bootstrap sample for fixed-effect cluster bootstrap
-    boot_coefs: Dict[str, List[float]] = {}
-    for _ in range(n_boot):
+    # Henderson's Mixed Model Equations solve exact MixedLM GLS per resampled cluster draw
+    pen_diag = np.concatenate(
+        [
+            np.full(p, 1e-8),
+            np.full(n_clusters, var_res / var_ds),
+            np.full(n_fam, var_res / var_fam),
+        ]
+    )
+    pen_mat = np.diag(pen_diag)
+    boot_coefs = np.empty((n_boot, p), dtype=float)
+
+    for b in range(n_boot):
         sampled = rng.choice(clusters, size=n_clusters, replace=True)
-        boot_df = pd.concat([cluster_to_df[c] for c in sampled], ignore_index=True)
-        try:
-            ols_res = smf.ols(formula, data=boot_df).fit()
-            for k, v in ols_res.params.items():
-                boot_coefs.setdefault(k, []).append(float(v))
-        except Exception:
-            continue
+        idx_list = [cluster_indices[c] for c in sampled]
+        all_idx = np.concatenate(idx_list)
+        X_b = X_full[all_idx]
+        y_b = y_full[all_idx]
+        Z_fam_b = Z_fam_full[all_idx]
+        Z_ds_b = np.zeros((len(all_idx), n_clusters), dtype=float)
+        pos = 0
+        for j, idxs in enumerate(idx_list):
+            m_len = len(idxs)
+            Z_ds_b[pos : pos + m_len, j] = 1.0
+            pos += m_len
+        C = np.hstack([X_b, Z_ds_b, Z_fam_b])
+        boot_coefs[b] = np.linalg.solve(C.T @ C + pen_mat, C.T @ y_b)[:p]
 
-    ci_map: Dict[str, Tuple[float, float]] = {}
-    for k, vals in boot_coefs.items():
-        arr = np.asarray(vals, dtype=float)
-        arr = arr[np.isfinite(arr)]
-        if len(arr) >= 10:
-            ci_map[k] = (float(np.percentile(arr, 2.5)), float(np.percentile(arr, 97.5)))
-    return ci_map
+    return {
+        k: (float(np.percentile(boot_coefs[:, i], 2.5)), float(np.percentile(boot_coefs[:, i], 97.5)))
+        for i, k in enumerate(fe_names)
+    }
 
 
 def evaluate_h2_strata_contrasts(df: pd.DataFrame) -> pd.DataFrame:
-    """Test H2: Compare mean delta_MASE across domain-overlap strata with cluster-robust SEs."""
+    """Test H2 across domain-overlap strata; strata with <5 base datasets are reported descriptively only."""
     strata_rows: List[Dict] = []
-    for stratum in ["in-domain", "partial-overlap", "out-of-domain", "recency"]:
+    for stratum in [
+        "in-domain",
+        "partial-overlap",
+        "out-of-domain",
+        "unseen_dataset_overlapping_domain",
+        "recency",
+    ]:
         sub = df[df["sim_stratum"] == stratum]
         if sub.empty:
             continue
         mean_val = float(sub["delta_mase"].mean())
         med_val = float(sub["delta_mase"].median())
-        win_rate = float((sub["delta_mase_raw"] > 0).mean())
-        # Cluster-robust SE of the stratum mean
+        mean_y = float(sub["y_log_mase_ratio"].mean())
+        pct_gain_mean = float((1.0 - np.exp(mean_y)) * 100.0)
+        win_rate = float((sub["y_log_mase_ratio"] < 0.0).mean())
         cluster_means = sub.groupby("base_dataset")["delta_mase"].mean()
         n_cl = len(cluster_means)
         se_cl = (
@@ -370,6 +398,9 @@ def evaluate_h2_strata_contrasts(df: pd.DataFrame) -> pd.DataFrame:
                 "stratum": stratum,
                 "n_pairs": int(len(sub)),
                 "n_base_datasets": int(n_cl),
+                "inference_status": "inferential (>=5 base datasets)" if n_cl >= 5 else "descriptive_only (<5 base datasets)",
+                "mean_log_ratio_y": mean_y,
+                "pct_gain_from_y": pct_gain_mean,
                 "mean_delta_mase": mean_val,
                 "median_delta_mase": med_val,
                 "cluster_se": se_cl,
@@ -381,7 +412,6 @@ def evaluate_h2_strata_contrasts(df: pd.DataFrame) -> pd.DataFrame:
             }
         )
 
-    # Planned pairwise contrasts vs in-domain using cluster-robust OLS
     in_dom = df[df["sim_stratum"] == "in-domain"]["delta_mase"].mean()
     for r in strata_rows:
         r["contrast_vs_in_domain"] = float(r["mean_delta_mase"] - in_dom)
@@ -450,7 +480,24 @@ def run_phase6_mixed_models(n_boot: int = 1000) -> Dict[str, pd.DataFrame]:
     comp_df["lrt_chi2"] = comp_df["model_id"].map(lambda m: lrt_map.get(m, {}).get("lrt_chi2", np.nan))
     comp_df["lrt_df"] = comp_df["model_id"].map(lambda m: lrt_map.get(m, {}).get("lrt_df", np.nan))
     comp_df["lrt_p_value"] = comp_df["model_id"].map(lambda m: lrt_map.get(m, {}).get("lrt_p_value", np.nan))
+    m2a_aic = float(comp_df.loc[comp_df["model_id"] == "M2a", "AIC_ML"].iloc[0])
+    m2a_bic = float(comp_df.loc[comp_df["model_id"] == "M2a", "BIC_ML"].iloc[0])
+    comp_df["delta_AIC_vs_M2a"] = comp_df["AIC_ML"] - m2a_aic
+    comp_df["delta_BIC_vs_M2a"] = comp_df["BIC_ML"] - m2a_bic
     comp_df.to_csv(out_dir / "mixed_model_comparison.csv", index=False)
+
+    # Compute VIFs including similarity & control predictors (Requirement B.7)
+    vif_pred_cols = CHAR_COLS + ["log_params", "dataset_leak", "sim_binary", "sim_share", "sim_distance"]
+    X_vif = df[vif_pred_cols].to_numpy(dtype=float)
+    X_vif_std = (X_vif - np.mean(X_vif, axis=0)) / np.maximum(np.std(X_vif, axis=0, ddof=1), 1e-12)
+    vifs_all = np.diag(np.linalg.pinv(np.corrcoef(X_vif_std, rowvar=False) + 1e-8 * np.eye(len(vif_pred_cols))))
+    pd.DataFrame(
+        {
+            "predictor": vif_pred_cols,
+            "vif": [float(max(1.0, v)) for v in vifs_all],
+            "keep_under_vif_10": [bool(v < 10.0) for v in vifs_all],
+        }
+    ).to_csv(PROJECT_ROOT / "results" / "features" / "vif_full_predictors.csv", index=False)
 
     # Refit M1, M2, M3 with REML for final parameter estimates + cluster bootstrap CIs (B = 1000)
     coef_rows: List[Dict] = []
@@ -458,7 +505,7 @@ def run_phase6_mixed_models(n_boot: int = 1000) -> Dict[str, pd.DataFrame]:
         formula = MODEL_FORMULAS[m_name]
         res_reml = _fit_crossed_mixedlm(formula, df, reml=True)
         boot_cis = cluster_bootstrap_fixed_effects(
-            formula, df, n_boot=n_boot if m_name in ("M2", "M3") else 250
+            formula, df, n_boot=n_boot if m_name in ("M2", "M3") else 250, res_reml=res_reml
         )
 
         # Also fit cluster-robust Gaussian GLM as a diagnostic check
@@ -481,6 +528,8 @@ def run_phase6_mixed_models(n_boot: int = 1000) -> Dict[str, pd.DataFrame]:
                     "model_id": m_name,
                     "term": term,
                     "estimate_reml": est,
+                    "estimate_log_ratio_y": -est,
+                    "pct_gain_equiv": float((1.0 - np.exp(-est)) * 100.0),
                     "se_reml": se,
                     "z_stat": t_val,
                     "p_value": p_val,

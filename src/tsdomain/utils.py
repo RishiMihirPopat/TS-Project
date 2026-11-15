@@ -11,6 +11,13 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from tsdomain.metrics.point import mape, mase, rmse, rmsse
+from tsdomain.metrics.probabilistic import (
+    coverage_and_width,
+    crps_weighted_quantile_loss,
+    interval_score,
+)
+
 QUANTILE_LEVELS: List[float] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 QUANTILE_COLS: List[str] = [f"q{q:.1f}" for q in QUANTILE_LEVELS]
 
@@ -109,11 +116,47 @@ def save_forecast_with_meta(
 
 
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
+detect_device = resolve_device
 
 
-def detect_device(device: str = "auto") -> str:
-    """Alias for resolve_device."""
-    return resolve_device(device)
+def score_forecast_window(
+    item_id: str,
+    window_id: int,
+    y_train: np.ndarray,
+    y_test: np.ndarray,
+    test_timestamps: List[pd.Timestamp],
+    season_length: int,
+    mean_pred: np.ndarray,
+    quantiles: Dict[str, np.ndarray],
+) -> tuple[pd.DataFrame, Dict[str, Any]]:
+    """Build canonical window forecast DataFrame and compute point/probabilistic window metrics."""
+    horizon = len(y_test)
+    df_win = pd.DataFrame(
+        {
+            "item_id": str(item_id),
+            "window_id": int(window_id),
+            "horizon_step": np.arange(1, horizon + 1, dtype=int),
+            "timestamp": [pd.Timestamp(t) for t in test_timestamps[:horizon]],
+            "y_true": np.asarray(y_test, dtype=float),
+            "mean": np.asarray(mean_pred, dtype=float),
+            **{col: np.asarray(quantiles[col], dtype=float) for col in QUANTILE_COLS},
+        }
+    )
+    q_map = {q: quantiles[f"q{q:.1f}"] for q in QUANTILE_LEVELS}
+    cov_info = coverage_and_width(y_test, quantiles["q0.1"], quantiles["q0.9"], y_train=y_train)
+    metrics = {
+        "item_id": str(item_id),
+        "window_id": int(window_id),
+        "mase": mase(y_test, mean_pred, y_train, m=season_length),
+        "rmsse": rmsse(y_test, mean_pred, y_train, m=season_length),
+        "rmse": rmse(y_test, mean_pred),
+        "mape": mape(y_test, mean_pred),
+        "crps": crps_weighted_quantile_loss(y_test, q_map),
+        "coverage_80": cov_info["coverage"],
+        "width_80": cov_info["scaled_width"],
+        "interval_score_80": interval_score(y_test, quantiles["q0.1"], quantiles["q0.9"], alpha=0.2),
+    }
+    return df_win, metrics
 
 
 def ensure_dir(path: Path) -> Path:

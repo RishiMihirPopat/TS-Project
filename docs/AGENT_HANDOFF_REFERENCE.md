@@ -222,35 +222,35 @@ Every output file in `data/processed/` and `results/` is listed below with its e
 
 ### 4.1 Processed Datasets (`data/processed/`)
 1. **`data/processed/unseen_mandi.parquet`** ($15,660$ rows = $60$ series $\times 261$ weekly timestamps `2012-01-02` to `2016-12-26`):
-   - Columns: `series_id` (`str`, e.g., `"Agra__Wheat"`), `timestamp` (`datetime64[ns]`), `target` (`float64`, wholesale price in INR/quintal), `commodity` (`str`), `market` (`str`), `state` (`str`), `freq` (`"W-MON"`), `season_length` (`52`), `horizon` (`8`).
+   - Columns: `item_id` (`str`, e.g., `"Uttar_Pradesh__Agra__Wheat"`), `timestamp` (`datetime64[ns]`), `target` (`float64`, wholesale price in INR/quintal).
 2. **`data/processed/unseen_recency.parquet`** ($38,280$ rows = $60$ series $\times 638$ daily timestamps `2025-01-01` to `2026-09-30`):
-   - Columns: `series_id` (`str`, e.g., `"New_Delhi__temperature_2m_mean"`), `timestamp` (`datetime64[ns]`), `target` (`float64`), `city` (`str`), `variable` (`str`), `freq` (`"D"`), `season_length` (`7`), `horizon` (`30`).
-3. **`data/processed/spx_daily.parquet`** ($9,264$ trading days `1990-01-02` to `2026-10-15`):
-   - Columns: `date` (`datetime64[ns]`), `open`, `high`, `low`, `close`, `volume`, `log_return` ($\ln(C_t/C_{t-1})$), `gk_var` (Garman–Klass daily variance), `gk_vol` ($\sqrt{\mathrm{gk\_var}}$), `gk_vol_ann` ($\sqrt{252 \cdot \mathrm{gk\_var}}$), `log_gk_vol` ($\ln(\mathrm{gk\_vol})$), `rv_5d`, `rv_21d`.
+   - Columns: `item_id` (`str`, e.g., `"New_Delhi__temperature_2m_mean"`), `timestamp` (`datetime64[ns]`), `target` (`float64`), `city` (`str`), `variable` (`str`).
+3. **`data/processed/spx_daily.parquet`** ($9,247$ trading days `1990-01-02` to `2026-10-15`):
+   - Columns: `Date` (`datetime64[ns]`), `Open`, `High`, `Low`, `Close`, `Volume`, `log_return` ($\ln(C_t/C_{t-1})$), `gk_var` (Garman–Klass daily variance), `log_gk_var` ($\ln(\mathrm{gk\_var})$), `rv_21d`.
 
 ### 4.2 Metrics & Forecast Files (`results/metrics/` & `results/forecasts/`)
 1. **`results/metrics/leaderboard.parquet`** ($2,328$ rows = $24$ models $\times 97$ GIFT-Eval configs):
-   - Columns: `config` (`"dataset/freq/term"`), `base_dataset`, `domain`, `freq`, `frequency_group`, `term`, `model`, `model_family`, `model_type` (`"statistical"`, `"deep-learning"`, `"pretrained"`, `"zero-shot"`), `mase`, `s_mape`, `crps`, `nd`, `mse`, `rank_mase`, `in_pretraining_pool` (`bool` from GIFT-Eval `testdata_leakage`), `param_count`.
+   - Columns: `model`, `model_type`, `test_data_leakage_flag` (`bool`), `dataset_raw`, `config` (`"dataset/freq/term"`), `base_dataset`, `freq`, `term`, `domain`, `frequency_group`, `mse`, `mae`, `mase`, `mape`, `smape`, `msis`, `rmse`, `wql`, `crps`, `nd`, `wpe`, `rank`.
 2. **`results/metrics/leaderboard_crosscheck.parquet`** ($4$ rows):
    - Columns: `config`, `n_series`, `n_eval_windows`, `season_length`, `local_seasonal_naive_mase`, `leaderboard_seasonal_naive_mase`, `abs_diff` (all `0.000000`).
 3. **`results/metrics/classical_baselines.parquet`** ($78$ rows = $6$ classical models $\times 13$ local configs):
-   - Columns: `config`, `base_dataset`, `domain`, `freq`, `term`, `horizon`, `season_length`, `model`, `n_series`, `n_windows`, `mase_mean`, `mase_median`, `mase_iqr`, `rmsse_mean`, `smape_mean`, `rmse_mean`, `crps_mean`, `coverage_80_mean`, `width_80_mean`, `winkler_80_mean`, `wall_time_s`.
+   - Columns: `model`, `config`, `domain`, `freq`, `horizon`, `season_length`, `num_windows`, `mase`, `mase_median`, `rmsse`, `rmse`, `mape`, `crps`, `coverage_80`, `width_80`, `interval_score_80`, `runtime_s`, `peak_ram_mb`, `energy_wh_est`.
 4. **`results/metrics/best_classical_local.parquet`** ($13$ rows) & **`results/metrics/best_classical_leaderboard.parquet`** ($97$ rows):
    - Columns: `config`, `best_classical_model`, `best_classical_mase`, `best_classical_crps`, `seasonal_naive_mase`.
 5. **`results/metrics/tsfm_local_metrics.parquet`** ($52$ rows = $4$ TSFMs $\times 13$ local configs):
-   - Columns: `config`, `base_dataset`, `domain`, `freq`, `term`, `horizon`, `season_length`, `model`, `checkpoint_id`, `n_series`, `n_windows`, `mase_mean`, `mase_median`, `mase_iqr`, `rmsse_mean`, `smape_mean`, `rmse_mean`, `crps_mean`, `coverage_80_mean`, `width_80_mean`, `winkler_80_mean`, `best_classical_mase`, `best_classical_model`, `relative_gain_mase`, `log_ratio_mase`.
+   - Columns: `model`, `checkpoint_id`, `param_count`, `config`, `domain`, `freq`, `horizon`, `num_windows`, `scaling_mode`, `mase`, `mase_median`, `rmsse`, `rmse`, `mape`, `crps`, `coverage_80`, `width_80`, `interval_score_80`, `infer_time_ms_per_point`, `energy_mwh_per_1k_points`, `peak_ram_mb`.
 6. **`results/metrics/conformal_calibration.parquet`** ($143$ rows = $11$ models $\times 13$ local configs) & **`results/metrics/conformal_summary_by_model.csv`** ($11$ rows):
-   - Columns: `model`, `config`, `domain`, `calibration_method` (`"cqr"` or `"abs_residual"`), `n_cal_windows`, `n_eval_windows`, `q_hat_80`, `pre_coverage_80`, `post_coverage_80`, `pre_width_80`, `post_width_80`, `pre_crps`, `post_crps`, `pre_interval_score`, `post_interval_score`.
+   - Columns: `model`, `config`, `domain`, `method` (`"cqr"` or `"residual"`), `is_point_only`, `n_cal_points`, `n_eval_points`, `conformal_offset_q80`, `pre_coverage_80`, `post_coverage_80`, `coverage_error_pre`, `coverage_error_post`, `pre_width_80`, `post_width_80`, `pre_crps`, `post_crps`, `pre_interval_score_80`, `post_interval_score_80`.
 7. **`results/forecasts/{model}/{config_slug}.parquet`** ($11 \times 13 = 143$ Parquet files + `.meta.json` sidecars):
-   - Columns: `series_id`, `window_id`, `window_origin`, `step` ($1..H$), `y_true`, `y_hat`, `q0.1`, `q0.2`, `q0.3`, `q0.4`, `q0.5`, `q0.6`, `q0.7`, `q0.8`, `q0.9`, `train_scale` (in-sample seasonal naive MAE), `train_mean_abs` ($\frac{1}{T}\sum |y_s|$).
+   - Columns: `item_id`, `window_id`, `horizon_step` ($1..H$), `timestamp`, `y_true`, `mean`, `q0.1`, `q0.2`, `q0.3`, `q0.4`, `q0.5`, `q0.6`, `q0.7`, `q0.8`, `q0.9`.
 
 ### 4.3 Features & Compute Files (`results/features/` & `results/compute/`)
 1. **`results/features/dataset_features.parquet`** ($99$ rows = $97$ GIFT-Eval configs + $2$ unseen configs):
    - Columns: `config`, `base_dataset`, `domain`, `freq`, `frequency_group`, `term`, `n_series`, `length`, `log_length`, `trend_strength`, `seasonal_strength`, `spectral_entropy`, `forecastability`, `hurst`, `stability`, `lumpiness`, `feature_source` (`"raw_arrow_direct"`, `"base_dataset_shard"`, `"domain_proxy_shard"`, `"local_parquet"`).
 2. **`results/features/model_dataset_similarity.parquet`** ($1,485$ rows = $15$ TSFMs $\times 99$ configs):
-   - Columns: `model`, `model_family`, `config`, `base_dataset`, `domain`, `domain_in_pretraining`, `verified`, `sim_binary`, `sim_binary_optimistic`, `sim_share`, `sim_distance` (LODO Mahalanobis), `sim_distance_knn` (LODO 3-NN), `domain_stratum` (`"in-domain"`, `"partial-overlap"`, `"out-of-domain"`, `"recency"`), `in_pretraining_pool`.
-3. **`results/compute/compute_profile.parquet`** ($143$ rows = $11$ local models $\times 13$ local configs):
-   - Columns: `model`, `model_family_group`, `config`, `device`, `param_count`, `n_series`, `n_windows`, `horizon`, `total_forecast_points`, `load_time_s`, `infer_time_s_median`, `infer_time_ms_per_point`, `infer_time_iqr_ms`, `peak_ram_mb`, `peak_vram_mb`, `energy_wh_total`, `energy_mwh_per_1k_points`, `energy_source` (`"codecarbon_TDP_estimate"`).
+   - Columns: `model`, `model_family`, `param_count`, `config`, `base_dataset`, `domain`, `domain_in_pretraining`, `verified`, `sim_binary`, `sim_binary_optimistic`, `sim_share`, `sim_distance` (LODO Mahalanobis), `sim_distance_knn` (LODO 3-NN), `domain_stratum` (`"in-domain"`, `"partial-overlap"`, `"out-of-domain"`, `"recency"`), `in_pretraining_pool`.
+3. **`results/compute/compute_profile.parquet`** ($130$ rows = $10$ profiled models $\times 13$ local configs):
+   - Columns: `model`, `config`, `param_count`, `device`, `load_time_s`, `infer_time_s_total`, `infer_time_std_s`, `infer_time_ms_per_point`, `infer_time_iqr_ms`, `peak_ram_mb`, `peak_vram_mb`, `energy_wh_total`, `energy_mwh_per_1k_points`, `energy_source`, `n_forecast_points`, `n_repeats`.
 
 ### 4.4 Statistical Analysis & Case Study Files (`results/analysis/`)
 1. **`results/analysis/phase6_analysis_dataset.parquet`** ($1,463$ rows): Merged master table for mixed-effects modeling and LODO CV.

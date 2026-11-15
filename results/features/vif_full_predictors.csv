@@ -1,0 +1,13 @@
+predictor,vif,keep_under_vif_10
+forecastability,2.7073804961191135,True
+seasonal_strength,1.7755561819007504,True
+trend_strength,2.7708999949756903,True
+hurst,1.8405364321491304,True
+stability,3.949276491262122,True
+lumpiness,1.8523721684789043,True
+log_length,2.0155749892606756,True
+log_params,1.0269410342999288,True
+dataset_leak,1.172086926519692,True
+sim_binary,1.720920865647626,True
+sim_share,1.8295762964307878,True
+sim_distance,1.5375843653501116,True

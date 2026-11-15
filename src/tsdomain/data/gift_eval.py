@@ -170,11 +170,7 @@ def get_gift_eval_prediction_length(config: str, freq_str: Optional[str] = None)
 
 
 def get_gift_eval_season_length(config: str, freq_str: Optional[str] = None) -> int:
-    """Return the exact seasonality parameter m used by GIFT-Eval for MASE scaling."""
-    if config.startswith("unseen_mandi"):
-        return 52
-    if config.startswith("unseen_recency"):
-        return 7
+    """Return the exact seasonality parameter m used by GIFT-Eval for MASE scaling (W->1, D->1)."""
     parts = config.strip().split("/")
     freq = freq_str or (parts[1] if len(parts) > 1 else "D")
     norm_f = parse_base_freq_code(freq)

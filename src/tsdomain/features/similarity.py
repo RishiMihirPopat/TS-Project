@@ -95,10 +95,11 @@ def compute_model_dataset_similarity(
                 cat_labels.append("false")
                 verified_flags.append(False)
 
-        # Reference pool indices: datasets documented as in_pretraining == "true"
-        ref_mask = np.array([lbl == "true" for lbl in cat_labels], dtype=bool)
+        # Reference pool indices: datasets documented as in_pretraining in {"true", "partial"}
+        ref_mask = np.array([lbl in {"true", "partial"} for lbl in cat_labels], dtype=bool)
         if np.sum(ref_mask) < 3:
             ref_mask = np.ones(len(df_f), dtype=bool)
+        leak_set = set(model_entry.dataset_leaks or [])
 
         for i, r in df_f.iterrows():
             cfg = str(r["config"])
@@ -106,6 +107,9 @@ def compute_model_dataset_similarity(
             dom = str(r["domain"])
             cat = cat_labels[i]
             ver = verified_flags[i]
+            if cfg.startswith("unseen_recency") and str(model_entry.training_cutoff) >= "2025":
+                cat = "unknown"
+                ver = False
 
             # Leave-one-base-dataset-out reference pool so a dataset is not compared to itself
             loo_mask = ref_mask & (df_f["base_dataset"].to_numpy() != base_ds)
@@ -135,12 +139,16 @@ def compute_model_dataset_similarity(
             rows.append(
                 {
                     "model": model_name,
+                    "model_family": str(model_entry.family or model_name.split("_")[0].lower()),
+                    "param_count": float(model_entry.param_count or 50_000_000),
                     "config": cfg,
                     "base_dataset": base_ds,
                     "domain": dom,
                     "domain_in_pretraining": cat,
-                    "domain_in_pretraining_optimistic": bool(cat in {"true", "unknown"}),
+                    "domain_in_pretraining_optimistic": bool(cat in {"true", "partial", "unknown"}),
                     "domain_in_pretraining_conservative": bool(cat == "true"),
+                    "sim_binary": 1.0 if cat == "true" else (0.5 if cat == "partial" else 0.0),
+                    "dataset_leak": int(base_ds in leak_set),
                     "claim_verified": ver,
                     "finance_included": bool(model_entry.finance_included),
                     "training_cutoff": str(model_entry.training_cutoff),

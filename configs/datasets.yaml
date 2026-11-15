@@ -163,17 +163,17 @@ datasets:
     licence: "Apache-2.0 (BizITObs IT Operations Telemetry)"
     retrieval_date: "2026-10-16"
 
-  # --- Unseen Dataset 1: Out-of-Domain (Indian Agricultural Mandi Commodity Prices) ---
+  # --- Unseen Dataset 1: Unseen Dataset in Overlapping Domain (Indian Agricultural Mandi Commodity Prices) ---
   - config: "unseen_mandi/W/short"
     base_dataset: "unseen_mandi"
     source: "Agmarknet (iancovert/Agmarknet)"
     local_path: "data/processed/unseen_mandi.parquet"
-    domain: "Agriculture/Mandi"
+    domain: "Econ/Fin"
     freq: "W"
     frequency_group: "weekly"
     term: "short"
     horizon: 8
-    season_length: 52
+    season_length: 1
     stl_period: 52
     source_url: "https://github.com/iancovert/Agmarknet"
     licence: "Government of India Open Data License (GODL-India) / Academic Research"
@@ -189,7 +189,7 @@ datasets:
     frequency_group: "daily"
     term: "short"
     horizon: 30
-    season_length: 7
+    season_length: 1
     stl_period: 7
     source_url: "https://archive-api.open-meteo.com/v1/archive"
     licence: "CC-BY-4.0 (Open-Meteo / Copernicus ERA5)"

@@ -148,6 +148,7 @@ def generate_figures(
     stratum_colors = {
         "in-domain": OKABE_ITO["blue"],
         "partial-overlap": OKABE_ITO["skyblue"],
+        "unseen_dataset_overlapping_domain": OKABE_ITO["purple"],
         "out-of-domain": OKABE_ITO["red"],
         "recency": OKABE_ITO["green"],
     }
@@ -178,12 +179,16 @@ def generate_figures(
     )
     ax1.axhline(0.0, color=OKABE_ITO["grey"], ls="--", lw=1.0)
     ax1.set_xlabel("Mahalanobis Domain Distance to Pretraining Reference Pool")
-    ax1.set_ylabel(r"Relative Gain $\Delta\mathrm{MASE}$ (%)")
+    ax1.set_ylabel(r"Log-Ratio Gain $-y = \log(\mathrm{MASE}_{\mathrm{cls}}/\mathrm{MASE}_m)$ (%)")
     ax1.set_title("(A) Continuous Feature-Space Distance vs TSFM Gain (H1)")
     ax1.legend(loc="lower left", frameon=True)
 
     # Panel B: H2 Stratum Means with 95% Cluster-Robust CIs
-    s_order = [s for s in ["in-domain", "partial-overlap", "out-of-domain", "recency"] if s in h2_df["stratum"].values]
+    s_order = [
+        s
+        for s in ["in-domain", "partial-overlap", "unseen_dataset_overlapping_domain", "out-of-domain", "recency"]
+        if s in h2_df["stratum"].values
+    ]
     h2_sub = h2_df.set_index("stratum").loc[s_order].reset_index()
     y_pos = np.arange(len(h2_sub))
     means_pct = 100.0 * h2_sub["mean_delta_mase"].to_numpy(dtype=float)
@@ -511,19 +516,26 @@ def run_phase9_report() -> Dict[str, Path]:
 
     # 3. Table 3: Mixed-Effects Model Ladder (M0 -> M3)
     t3_cols = [
-        "model_id",
-        "n_obs",
-        "k_params",
-        "logLik_ML",
-        "AIC_ML",
-        "BIC_ML",
-        "R2_marginal",
-        "R2_conditional",
-        "icc_base_dataset",
-        "icc_model_family",
-        "lrt_vs",
-        "lrt_chi2",
-        "lrt_p_value",
+        c
+        for c in [
+            "model_id",
+            "n_obs",
+            "k_params",
+            "logLik_ML",
+            "AIC_ML",
+            "BIC_ML",
+            "delta_AIC_vs_M2a",
+            "delta_BIC_vs_M2a",
+            "R2_marginal",
+            "R2_conditional",
+            "icc_base_dataset",
+            "icc_config",
+            "icc_model_family",
+            "lrt_vs",
+            "lrt_chi2",
+            "lrt_p_value",
+        ]
+        if c in comp_df.columns
     ]
     t3_df = comp_df[t3_cols].copy()
     _save_table_both(t3_df, tables_dir, "table3_mixed_effects_ladder", float_fmt=".4f")
@@ -558,12 +570,18 @@ def run_phase9_report() -> Dict[str, Path]:
     m2_row = comp_df[comp_df["model_id"] == "M2"].iloc[0]
     m3_row = comp_df[comp_df["model_id"] == "M3"].iloc[0]
 
-    m2_coefs = coef_df[coef_df["model_id"] == "M2"].set_index("term")
-    m3_coefs = coef_df[coef_df["model_id"] == "M3"].set_index("term")
-
     in_dom_r = h2_df[h2_df["stratum"] == "in-domain"].iloc[0]
     ood_r = h2_df[h2_df["stratum"] == "out-of-domain"].iloc[0]
     part_r = h2_df[h2_df["stratum"] == "partial-overlap"].iloc[0]
+
+    vif_full_path = features_dir / "vif_full_predictors.csv"
+    vif_full_md = ""
+    if vif_full_path.exists():
+        vif_full_df = pd.read_csv(vif_full_path)
+        vif_full_md = (
+            "\n#### Full-Predictor VIF Diagnostics (Including Similarity Terms & Controls)\n\n"
+            + _df_to_markdown_table(vif_full_df, float_fmt=".2f")
+        )
 
     # Optional P1 summaries if already generated
     conf_section = ""
@@ -571,10 +589,11 @@ def run_phase9_report() -> Dict[str, Path]:
     if conf_sum_path.exists():
         conf_sum_df = pd.read_csv(conf_sum_path)
         conf_section = (
-            "\n### 5.4 Probabilistic Calibration & Time-Ordered Split Conformal Repair (Phase 5)\n\n"
-            "Evaluating native prediction intervals (`q0.1` to `q0.9`) against time-ordered split conformal "
-            "calibration (earliest 20% calibration windows $\\to$ remaining 80% evaluation windows) reveals "
-            "substantial native miscalibration that conformalization repairs without retraining:\n\n"
+            "\n### 5.4 Probabilistic Calibration & Cross-Series Per-Horizon Split Conformal Repair (Phase 5)\n\n"
+            "Evaluating native prediction intervals (`q0.1` to `q0.9`) against split conformal calibration "
+            "(calibrating on rolling window 1 across all 60 series and evaluating on rolling window 2, separately "
+            "per horizon step $h \\in \\{1,\\dots,H\\}$ under cross-series exchangeability of standardized "
+            "nonconformity scores) reveals native miscalibration that conformalization repairs without retraining:\n\n"
             + _df_to_markdown_table(conf_sum_df, float_fmt=".4f")
         )
 
@@ -589,12 +608,13 @@ def run_phase9_report() -> Dict[str, Path]:
         n_rec = int(fb_df["recovered_within_30d"].sum())
         fin_section = (
             f"\n### 5.5 Financial Volatility Structural-Break Case Study (Phase 7 — Testing H3)\n\n"
-            f"On S&P 500 daily Garman–Klass log-volatility (1990–2026, $N = 9,264$ trading days), PELT change-point "
-            f"segmentation recovers **{n_rec} of 6** major historical crisis breakpoints within $\\pm 30$ trading days:\n\n"
+            f"On S&P 500 daily Garman–Klass log-volatility (1990–2026, $N = 9,247$ trading days), PELT change-point "
+            f"segmentation (`pen = 12.0` on 5-day smoothed standardized log-GK volatility) detects 30 regime breaks "
+            f"and recovers **{n_rec} of 6** major historical crisis breakpoints within $\\pm 30$ trading days:\n\n"
             + _df_to_markdown_table(fb_df, float_fmt=".1f")
-            + "\n#### Regime-Partitioned Forecast Accuracy (`stable` vs 63-Trading-Day `post_break`)\n\n"
+            + "\n#### Regime-Partitioned Forecast Accuracy (`stable` vs 63-Trading-Day `post_break`; QLIKE, MSE, MASE, CRPS & Kupiec POF)\n\n"
             + _df_to_markdown_table(fr_df, float_fmt=".4f")
-            + "\n#### H3 Stationary Block-Bootstrap Contrast (`Chronos_small` vs `Moirai_small` vs `GARCH(1,1)-t`)\n\n"
+            + "\n#### H3 Difference-in-Differences (DiD), Stationary Block-Bootstrap & Diebold–Mariano Contrasts (`Chronos_small` [no market-price data; finance via M4 only] vs `Moirai_small` vs `GARCH(1,1)-t`)\n\n"
             + _df_to_markdown_table(fh3_df, float_fmt=".4f")
         )
 
@@ -605,13 +625,31 @@ def run_phase9_report() -> Dict[str, Path]:
         abl_section = (
             "\n### 5.6 LightGBM Budget-Parity Baseline & Robustness Ablations (Phase 8)\n\n"
             "To verify that our findings are not artifacts of scaling choices, pretraining benchmark leakage, "
-            "or `unknown` registry codings, Table 6b summarizes the Phase 8 robustness suite and LightGBM "
-            "tabular baseline:\n\n"
+            "or `unknown` registry codings, Table 6b summarizes the Phase 8 robustness suite (including the Gamma "
+            "log-link GLM fit directly on the raw ratio $\\mathrm{MASE}_{m,d}/\\mathrm{MASE}_{\\text{classical},d}$) "
+            "and the LightGBM tabular baseline:\n\n"
             + _df_to_markdown_table(abl_df, float_fmt=".4f")
         )
 
     lit_path = PROJECT_ROOT / "docs" / "literature_review.md"
     lit_text = lit_path.read_text(encoding="utf-8") if lit_path.exists() else ""
+
+    coef_cols_show = [
+        c
+        for c in [
+            "model_id",
+            "term",
+            "estimate_reml",
+            "estimate_log_ratio_y",
+            "pct_gain_equiv",
+            "se_reml",
+            "p_value",
+            "boot_ci95_low",
+            "boot_ci95_high",
+            "fdr_bh_q_value",
+        ]
+        if c in coef_df.columns
+    ]
 
     report_md = f"""# Domain-Shift and Computational-Efficiency Benchmarking of Time-Series Foundation Models
 
@@ -621,11 +659,11 @@ def run_phase9_report() -> Dict[str, Path]:
 
 ## Executive Summary & Headline Findings
 
-1. **Research Question:** When a zero-shot Time-Series Foundation Model (TSFM) is applied to a domain that differs from its documented pretraining corpus, how much of its claimed "foundational" advantage over classical statistical baselines (`AutoETS`, `AutoTheta`, `AutoARIMA`, `SeasonalNaive`) survives, is that transfer predictable *ex ante* from measurable domain similarity and series characteristics, and when does the accuracy gain justify the 10–1,000$\\times$ higher compute and energy cost?
-2. **H1 Confirmed (Domain Similarity Predicts Gain Beyond Series Characteristics):** Across $N = {int(m2_row['n_obs'])}$ `(model, dataset_config)` pairs spanning 15 TSFMs and 99 configurations (97 GIFT-Eval configurations across 7 domains + 2 newly curated unseen datasets), adding the pretraining domain-similarity block (`sim_binary`, `sim_share`, `sim_distance`) to the QuitoBench series-characteristics baseline (`M1`) significantly improves model fit (Likelihood-Ratio Test $\\chi^2({int(m2_row['lrt_df'])}) = {m2_row['lrt_chi2']:.2f}$, $p = {m2_row['lrt_p_value']:.4f}$), and adding domain-shift $\\times$ series-feature interactions (`M3`) further improves fit ($\\chi^2({int(m3_row['lrt_df'])}) = {m3_row['lrt_chi2']:.2f}$, $p = {m3_row['lrt_p_value']:.4f}$, reducing $\\mathrm{{AIC}}$ from ${m1_row['AIC_ML']:.1f}$ in `M1` to ${m3_row['AIC_ML']:.1f}$ in `M3`).
-3. **H2 Confirmed (Out-of-Domain Degradation):** In planned cluster-robust contrasts across domain-overlap strata, TSFMs beat the best classical baseline on **{100.0 * in_dom_r['tsfm_win_rate']:.1f}%** of in-domain pairs (median $\\Delta\\mathrm{{MASE}} = {100.0 * in_dom_r['median_delta_mase']:+.2f}\\%$) and **{100.0 * part_r['tsfm_win_rate']:.1f}%** of partial-overlap pairs, whereas in the **out-of-domain stratum** (`domain_in_pretraining = false` and unseen Indian agricultural mandi prices), the TSFM win rate drops to **{100.0 * ood_r['tsfm_win_rate']:.1f}%** with a mean relative degradation of $\\Delta\\mathrm{{MASE}} = {100.0 * ood_r['mean_delta_mase']:+.2f}\\%$ ($t = {ood_r['t_stat_vs_zero']:.2f}$, $p = {ood_r['p_value_vs_zero']:.4f}$).
-4. **Leave-One-Base-Dataset-Out (LODO) Out-of-Sample Predictability:** Across 30 held-out `base_dataset` clusters, the Tan Jerome & Simon (2026) two-feature heuristic (`length < 700` and high seasonality) achieves virtually zero rank correlation with actual zero-shot gain ($\\rho = {lodo_sum_df.loc[lodo_sum_df['predictor']=='TanJerome_Simon_Heuristic', 'spearman_rho'].iloc[0]:.3f}$, sign accuracy ${100.0 * lodo_sum_df.loc[lodo_sum_df['predictor']=='TanJerome_Simon_Heuristic', 'sign_accuracy'].iloc[0]:.1f}\\%$). Incorporating continuous Mahalanobis domain distance (`M2b`/`M3`) raises out-of-sample rank correlation to $\\rho = {lodo_sum_df.loc[lodo_sum_df['predictor']=='M2b', 'spearman_rho'].iloc[0]:.3f}$ ($p = {lodo_sum_df.loc[lodo_sum_df['predictor']=='M2b', 'spearman_p_value'].iloc[0]:.2e}$) and sign accuracy to **{100.0 * lodo_sum_df.loc[lodo_sum_df['predictor']=='M1', 'sign_accuracy'].iloc[0]:.1f}%–{100.0 * lodo_sum_df.loc[lodo_sum_df['predictor']=='M2b', 'sign_accuracy'].iloc[0]:.1f}%**.
-5. **H4 Confirmed (Compute-Efficiency Pareto Frontier):** Across the 13 locally profiled configurations, `SeasonalNaive`, `AutoTheta`, `AutoETS`, `TTM-R2-Pretrained` ($0.8\\text{{M}}$ params, ${pareto_mod_df.loc[pareto_mod_df['model']=='TTM-R2-Pretrained', 'mean_infer_ms_per_point'].iloc[0]:.2f}\\text{{ ms/pt}}$), `Moirai_small` (${pareto_mod_df.loc[pareto_mod_df['model']=='Moirai_small', 'mean_infer_ms_per_point'].iloc[0]:.2f}\\text{{ ms/pt}}$), and `TimesFM` (${pareto_mod_df.loc[pareto_mod_df['model']=='TimesFM', 'mean_mase'].iloc[0]:.3f}$ mean MASE) trace out distinct segments of the accuracy–energy Pareto frontier, while classical baselines dominate in high-domain-shift / low-forecastability regimes.
+1. **Research Question:** When a zero-shot Time-Series Foundation Model (TSFM) is applied to a domain that differs from its documented pretraining corpus, how much of its claimed "foundational" advantage over the common 5-model classical statistical baseline set (`Naive`, `SeasonalNaive`, `AutoETS`, `AutoTheta`, `AutoARIMA`) survives, is that transfer predictable *ex ante* from measurable domain similarity and series characteristics (controlling for known `dataset_leak` overlap), and when does the accuracy gain justify the 10–1,000$\\times$ higher latency and TDP-estimated CPU energy cost?
+2. **H1 Confirmed (Domain Similarity Predicts Gain Beyond Series Characteristics & Leakage):** Across $N = {int(m2_row['n_obs'])}$ TSFM-only `(model, dataset_config)` pairs (97 GIFT-Eval configurations $\\times$ 15 TSFMs + 2 unseen local configurations $\\times$ 4 local TSFMs), modeling the symmetric log-ratio response $y = \\log(\\mathrm{{MASE}}_m / \\mathrm{{MASE}}_{{\\text{{classical}}}})$ (equivalently $-y = \\log(\\mathrm{{MASE}}_{{\\text{{classical}}}} / \\mathrm{{MASE}}_m)$, reported alongside percentage gain $(1 - e^y)\\times 100\\%$), adding the pretraining domain-similarity block (`sim_binary`, `sim_share`, `sim_distance`) to the series-characteristics + `dataset_leak` baseline (`M1`) significantly improves model fit (Likelihood-Ratio Test $\\chi^2({int(m2_row['lrt_df'])}) = {m2_row['lrt_chi2']:.2f}$, $p = {m2_row['lrt_p_value']:.4f}$), and adding domain-shift $\\times$ series-feature interactions (`M3`) further improves fit ($\\chi^2({int(m3_row['lrt_df'])}) = {m3_row['lrt_chi2']:.2f}$, $p = {m3_row['lrt_p_value']:.4f}$, reducing $\\mathrm{{AIC}}$ from ${m1_row['AIC_ML']:.1f}$ in `M1` to ${m3_row['AIC_ML']:.1f}$ in `M3`).
+3. **H2 Confirmed (Out-of-Domain Degradation):** In planned cluster-robust contrasts across domain-overlap strata with $\\ge 5$ base datasets, TSFMs beat the best classical baseline on **{100.0 * in_dom_r['tsfm_win_rate']:.1f}%** of in-domain pairs (mean $\%\\text{{ gain}} = {in_dom_r['pct_gain_from_y']:+.2f}\\%$) and **{100.0 * part_r['tsfm_win_rate']:.1f}%** of partial-overlap pairs, whereas in the **out-of-domain stratum** (`domain_in_pretraining = false` across {int(ood_r['n_base_datasets'])} base datasets), the TSFM win rate drops to **{100.0 * ood_r['tsfm_win_rate']:.1f}%** with a mean relative degradation of $-y = {100.0 * ood_r['mean_delta_mase']:+.2f}\\%$ ($t = {ood_r['t_stat_vs_zero']:.2f}$, $p = {ood_r['p_value_vs_zero']:.4f}$). Strata with $< 5$ base datasets (`unseen_dataset_overlapping_domain` for `unseen_mandi`, and `recency` for `unseen_recency`) are reported descriptively only.
+4. **Leave-One-Base-Dataset-Out (LODO) Out-of-Sample Predictability:** Across 30 held-out `base_dataset` clusters, the Tan Jerome & Simon (2026) two-feature heuristic (`n_train < 700` and `seasonal_strength >= 0.30`) achieves near-zero rank correlation with actual zero-shot gain ($\\rho = {lodo_sum_df.loc[lodo_sum_df['predictor']=='TanJerome_Simon_Heuristic', 'spearman_rho'].iloc[0]:.3f}$, sign accuracy ${100.0 * lodo_sum_df.loc[lodo_sum_df['predictor']=='TanJerome_Simon_Heuristic', 'sign_accuracy'].iloc[0]:.1f}\\%$). Incorporating continuous Mahalanobis domain distance (`M2b`/`M3`) raises out-of-sample rank correlation to $\\rho = {lodo_sum_df.loc[lodo_sum_df['predictor']=='M2b', 'spearman_rho'].iloc[0]:.3f}$ ($p = {lodo_sum_df.loc[lodo_sum_df['predictor']=='M2b', 'spearman_p_value'].iloc[0]:.2e}$) and sign accuracy to **{100.0 * lodo_sum_df.loc[lodo_sum_df['predictor']=='M1', 'sign_accuracy'].iloc[0]:.1f}%–{100.0 * lodo_sum_df.loc[lodo_sum_df['predictor']=='M2b', 'sign_accuracy'].iloc[0]:.1f}%**.
+5. **H4 Confirmed (Compute-Efficiency Pareto Frontier):** Across the 13 locally profiled configurations (reporting latency in `ms/pt` and TDP-estimated CPU energy at `45 W`, with median and IQR alongside means, and marginal cost per 1% gain computed strictly over positive-gain configurations), `SeasonalNaive`, `AutoTheta`, `AutoETS`, `TTM-R2-Pretrained` ($0.8\\text{{M}}$ params, median ${pareto_mod_df.loc[pareto_mod_df['model']=='TTM-R2-Pretrained', 'median_infer_ms_per_point'].iloc[0]:.2f}\\text{{ ms/pt}}$), `Moirai_small` (median ${pareto_mod_df.loc[pareto_mod_df['model']=='Moirai_small', 'median_infer_ms_per_point'].iloc[0]:.2f}\\text{{ ms/pt}}$), and `TimesFM` (${pareto_mod_df.loc[pareto_mod_df['model']=='TimesFM', 'mean_mase'].iloc[0]:.3f}$ mean MASE) trace out distinct segments of the accuracy–latency/energy Pareto frontier.
 
 ---
 
@@ -635,24 +673,25 @@ def run_phase9_report() -> Dict[str, Path]:
 
 ## 3. Methodology, Data Architecture, and Verification Harness
 
-### 3.1 Exact GIFT-Eval Leaderboard Cross-Check (Phase 2)
-Before running foundation models or fitting mixed-effects regressions, our local evaluation harness was verified against the official Salesforce `GIFT-Eval` leaderboard (`Seasonal_Naive` MASE) on four full benchmark configurations without series truncation. Accounting for GluonTS frequency-to-seasonality rules (`M -> 12`, `W -> 1`) reproduced the published leaderboard numbers to **6 decimal places** (`abs_diff = 0.000000`):
+### 3.1 Exact GIFT-Eval Leaderboard Cross-Check (Phase 0 / Phase 2)
+Before running foundation models or fitting mixed-effects regressions, our local evaluation harness was verified against the official Salesforce `GIFT-Eval` leaderboard (`Seasonal_Naive` MASE, snapshot date `2026-10-16`) on four full, uncapped benchmark configurations (`exact_gift_eval=True`, without the 60-series subsample). Accounting for GluonTS frequency-to-seasonality rules (`M -> 12`, `W -> 1`) reproduced the published leaderboard numbers to **6 decimal places** (`abs_diff = 0.000000`):
 
 {_df_to_markdown_table(cc_df[['config', 'n_series', 'n_eval_windows', 'season_length', 'local_seasonal_naive_mase', 'leaderboard_seasonal_naive_mase', 'abs_diff']], float_fmt='.6f')}
 
-### 3.2 Benchmark Corpus & Unseen Domain Datasets (Phase 1 & Phase 3)
+### 3.2 Benchmark Corpus & Unseen Datasets (Phase 1 & Phase 3)
 Our full evaluation combines:
-- **97 GIFT-Eval configurations** across 7 domains (`Energy`, `Transport`, `Nature`, `Web/CloudOps`, `Sales`, `Econ/Fin`, `Healthcare`) and 24 models (15 TSFMs, 4 classical baselines, and published deep-learning baselines `PatchTST` and `N-BEATS`).
-- **Unseen Dataset 1 (`unseen_mandi/W/short`, Out-of-Domain Stratum):** 60 weekly wholesale agricultural commodity price series across Indian mandis (261 weeks each, 15,660 observations from `Agmarknet`), absent from all TSFM pretraining corpora.
-- **Unseen Dataset 2 (`unseen_recency/D/short`, Post-Cutoff Recency Stratum):** 60 daily meteorological series (temperature, wind speed, surface pressure, precipitation, solar radiation across 12 global stations from 2025-01-01 to 2026-09-30, 38,280 observations from Open-Meteo), strictly post-dating the training cutoffs of `Chronos_small` (2024-03) and `Moirai_small` (2024-06).
+- **97 GIFT-Eval configurations** across 28 `base_dataset` clusters and 7 domains (`Energy`, `Transport`, `Nature`, `Web/CloudOps`, `Sales`, `Econ/Fin`, `Healthcare`), evaluated across 15 TSFMs (4 locally executed + 11 leaderboard-only: `Chronos_base`, `Chronos_large`, `chronos_bolt_small`, `chronos_bolt_base`, `Chronos-2`, `Moirai_base`, `Moirai_large`, `Moirai2`, `TimesFM`, `timesfm_2_0_500m`, `TTM-R1-Pretrained`) against the unified 5-model classical baseline set (`Naive`, `SeasonalNaive`, `AutoETS`, `AutoTheta`, `AutoARIMA`).
+- **Unseen Dataset 1 (`unseen_mandi/W/short`, `unseen_dataset_overlapping_domain` Stratum):** 60 weekly wholesale agricultural commodity price series across Indian mandis (261 weeks each, 15,660 observations from `data.gov.in` / Agmarknet, GODL-India licence; MASE `season_length = 1` matching GIFT-Eval weekly convention, STL decomposition period `52`), not in any documented pretraining corpus (`Econ/Fin` commodity prices).
+- **Unseen Dataset 2 (`unseen_recency/D/short`, Post-Cutoff Recency Stratum):** 60 daily meteorological series (3 variables: `temperature_2m_mean`, `shortwave_radiation_sum`, `wind_speed_10m_max` across 20 global cities from 2025-01-01 to 2026-09-30, 38,280 observations from Open-Meteo ERA5, CC-BY-4.0 licence; MASE `season_length = 1`, STL decomposition period `7`), post-dating the training cutoffs of `Chronos_small` (2024-03) and `Moirai_small` (2024-06), with 2025+ models (`Chronos-2`, `Moirai2`, `TimesFM-2.5`) coded as `"unknown"` in the recency registry.
 
-#### Table 1: Dataset Meta-Feature Summary by Domain
+#### Table 1: Dataset Meta-Feature Summary by Domain (Hurst via Detrended Fluctuation Analysis)
 {_df_to_markdown_table(t1_df, float_fmt='.3f')}
 
-#### Collinearity Diagnostics (Variance Inflation Factors)
-All 7 candidate series meta-features satisfy the $\\mathrm{{VIF}} < 10$ threshold (maximum $\\mathrm{{VIF}} = {vif_df['vif'].max():.2f}$):
+#### Collinearity Diagnostics (Variance Inflation Factors — `forecastability = 1 - spectral_entropy` entered; `spectral_entropy` excluded as exact complement)
+All 7 series meta-features satisfy the $\\mathrm{{VIF}} < 10$ threshold (maximum $\\mathrm{{VIF}} = {vif_df['vif'].max():.2f}$):
 
 {_df_to_markdown_table(vif_df, float_fmt='.2f')}
+{vif_full_md}
 
 ---
 
@@ -668,20 +707,20 @@ All 7 candidate series meta-features satisfy the $\\mathrm{{VIF}} < 10$ threshol
 ## 5. Statistical Results: Mixed-Effects Models, LODO Validation, and Compute Pareto Frontier
 
 ### 5.1 Hierarchical Mixed-Effects Model Ladder (Phase 6 — Testing H1)
-We fit nested linear mixed-effects models with crossed random intercepts $(1 \\mid \\text{{base\\_dataset}}) + (1 \\mid \\text{{model\\_family}})$ on $\\Delta\\mathrm{{MASE}}_{{m,d}} = (\\mathrm{{MASE}}_{{\\text{{best\\_classical}},d}} - \\mathrm{{MASE}}_{{m,d}}) / \\mathrm{{MASE}}_{{\\text{{best\\_classical}},d}}$:
-- **Variance Decomposition (`M0`):** In the null model, the dataset-cluster intraclass correlation is $\\mathrm{{ICC}}_{{\\text{{base\\_dataset}}}} = {m0_row['icc_base_dataset']:.3f}$ (${100.0 * m0_row['icc_base_dataset']:.1f}\\%$ of variance) while $\\mathrm{{ICC}}_{{\\text{{model\\_family}}}} = {m0_row['icc_model_family']:.3f}$ (${100.0 * m0_row['icc_model_family']:.1f}\\%$), confirming that dataset properties explain roughly $8\\times$ more variance in relative TSFM gain than model-family identity.
-- **Series Characteristics (`M1`, QuitoBench Null):** Adding `forecastability`, `seasonal_strength`, `trend_strength`, `hurst`, `stability`, `lumpiness`, `log_length`, $\\log(\\text{{params}})$, and `frequency_group` yields marginal $R^2_m = {m1_row['R2_marginal']:.3f}$ and conditional $R^2_c = {m1_row['R2_conditional']:.3f}$ ($\\mathrm{{LRT}}$ vs `M0`: $\\chi^2(13) = {m1_row['lrt_chi2']:.2f}$, $p = {m1_row['lrt_p_value']:.2e}$).
-- **Pretraining Domain Similarity (`M2` & `M3`, H1):** Adding the pretraining domain-similarity block (`M2`) significantly improves fit over `M1` ($\\chi^2(3) = {m2_row['lrt_chi2']:.2f}$, $p = {m2_row['lrt_p_value']:.4f}$), and adding interactions between `sim_distance` and series characteristics (`M3`) further improves fit ($\\chi^2(3) = {m3_row['lrt_chi2']:.2f}$, $p = {m3_row['lrt_p_value']:.4f}$, marginal $R^2_m = {m3_row['R2_marginal']:.3f}$).
+We fit nested linear mixed-effects models with random intercepts $(1 \\mid \\text{{base\\_dataset}}) + (1 \\mid \\text{{config}}) + (1 \\mid \\text{{model\\_family}})$ (30 `base_dataset` clusters, 99 `config` levels nested within `base_dataset`, and 7 `model_family` levels $\\ge 6$) on the log-ratio response $y_{{m,d}} = \\log(\\mathrm{{MASE}}_{{m,d}} / \\mathrm{{MASE}}_{{\\text{{classical}},d}})$ (equivalently $-y_{{m,d}} = \\log(\\mathrm{{MASE}}_{{\\text{{classical}},d}} / \\mathrm{{MASE}}_{{m,d}})$ so positive coefficients denote TSFM improvement), controlling for `dataset_leak` and `source_local` from `M1` upward:
+- **Variance Decomposition (`M0`):** In the null model, the dataset-cluster intraclass correlation is $\\mathrm{{ICC}}_{{\\text{{base\\_dataset}}}} = {m0_row['icc_base_dataset']:.3f}$ and config-level $\\mathrm{{ICC}}_{{\\text{{config}}}} = {m0_row['icc_config']:.3f}$ while $\\mathrm{{ICC}}_{{\\text{{model\\_family}}}} = {m0_row['icc_model_family']:.3f}$, confirming that dataset and configuration structure explain substantially more variance in relative TSFM gain than model-family identity.
+- **Series Characteristics & Leakage Control (`M1`, QuitoBench Null):** Adding `forecastability`, `seasonal_strength`, `trend_strength`, DFA `hurst`, `stability`, `lumpiness`, `log_length`, $\\log(\\text{{params}})$, `dataset_leak`, `source_local`, and `frequency_group` yields marginal $R^2_m = {m1_row['R2_marginal']:.3f}$ and conditional $R^2_c = {m1_row['R2_conditional']:.3f}$ ($\\mathrm{{LRT}}$ vs `M0`: $\\chi^2({int(m1_row['lrt_df'])}) = {m1_row['lrt_chi2']:.2f}$, $p = {m1_row['lrt_p_value']:.2e}$).
+- **Pretraining Domain Similarity (`M2a`, `M2b`, `M2`, & `M3`, H1):** Comparing the non-nested single-block additions `M2a` (`+ sim_binary`) vs `M2b` (`+ z_sim_distance`) by AIC/BIC shows $\\Delta\\mathrm{{AIC}}_{{\\text{{M2b vs M2a}}}} = {comp_df.loc[comp_df['model_id']=='M2b', 'delta_AIC_vs_M2a'].iloc[0]:+.2f}$ and $\\Delta\\mathrm{{BIC}}_{{\\text{{M2b vs M2a}}}} = {comp_df.loc[comp_df['model_id']=='M2b', 'delta_BIC_vs_M2a'].iloc[0]:+.2f}$. Adding the full similarity block (`M2`) significantly improves fit over `M1` ($\\chi^2({int(m2_row['lrt_df'])}) = {m2_row['lrt_chi2']:.2f}$, $p = {m2_row['lrt_p_value']:.4f}$), and adding interactions between `sim_distance` and series characteristics (`M3`) further improves fit ($\\chi^2({int(m3_row['lrt_df'])}) = {m3_row['lrt_chi2']:.2f}$, $p = {m3_row['lrt_p_value']:.4f}$, marginal $R^2_m = {m3_row['R2_marginal']:.3f}$). Benjamini–Hochberg FDR $q$-values (`fdr_bh_q_value`) are computed over the pre-specified hypothesis family of similarity fixed effects (`3` terms in `M2`; `6` similarity + interaction terms in `M3`).
 
 #### Table 3: Nested Mixed-Effects Model Comparison (ML Fit for LRT/AIC/BIC)
 {_df_to_markdown_table(t3_df, float_fmt='.4f')}
 
-#### Key Fixed-Effect Estimates in `M2` and `M3` (REML Fit with 1,000-Cluster Bootstrap 95% CIs)
-{_df_to_markdown_table(coef_df[coef_df['model_id'].isin(['M2', 'M3']) & coef_df['term'].isin(['sim_binary', 'z_sim_share', 'z_sim_distance', 'z_forecastability', 'z_seasonal_strength', 'z_trend_strength', 'z_log_length', 'z_log_params', 'z_sim_distance:z_forecastability', 'z_sim_distance:z_seasonal_strength', 'z_sim_distance:z_log_length'])][['model_id', 'term', 'estimate_reml', 'se_reml', 'p_value', 'boot_ci95_low', 'boot_ci95_high', 'fdr_bh_q_value']], float_fmt='.4f')}
+#### Key Fixed-Effect Estimates in `M2` and `M3` (REML Fit with 1,000-Cluster Bootstrap 95% CIs, Log-Ratio $y$ & `% Gain`)
+{_df_to_markdown_table(coef_df[coef_df['model_id'].isin(['M2', 'M3']) & coef_df['term'].isin(['sim_binary', 'z_sim_share', 'z_sim_distance', 'dataset_leak', 'source_local', 'z_forecastability', 'z_seasonal_strength', 'z_trend_strength', 'z_log_length', 'z_log_params', 'z_sim_distance:z_forecastability', 'z_sim_distance:z_seasonal_strength', 'z_sim_distance:z_log_length'])][coef_cols_show], float_fmt='.4f')}
 
 ### 5.2 Domain-Overlap Strata Contrasts (Testing H2)
 
-#### Table 6a: H2 Planned Contrasts Across Domain-Overlap Strata
+#### Table 6a: H2 Planned Contrasts Across Domain-Overlap Strata (Strata with $<5$ Base Datasets Reported Descriptively Only)
 {_df_to_markdown_table(h2_df, float_fmt='.4f')}
 
 ![Figure 2: Domain Similarity vs Gain and H2 Strata Contrasts](figures/fig2_similarity_vs_gain.png)
@@ -695,7 +734,7 @@ We fit nested linear mixed-effects models with crossed random intercepts $(1 \\m
 
 ### 5.4 Compute-Efficiency Pareto Frontier & H4 Decision Boundary (Phase 4 & Phase 9)
 
-#### Table 5: Compute, Memory, Energy, and Accuracy Across the 13 Locally Executed Configurations
+#### Table 5: Latency (`ms/pt`), TDP-Estimated CPU Energy (`45 W`), Memory, and Accuracy Across the 13 Locally Executed Configurations
 {_df_to_markdown_table(pareto_mod_df, float_fmt='.3f')}
 
 ![Figure 4: Compute-Efficiency Pareto Frontier and H4 Decision Boundary](figures/fig4_pareto_compute_accuracy.png)
@@ -709,11 +748,11 @@ We fit nested linear mixed-effects models with crossed random intercepts $(1 \\m
 
 ## 6. Limitations, Risks, and Decision Rules for Practitioners
 
-1. **Pretraining Corpus Opacity:** While `Chronos` and `Moirai` (LOTSA) document constituent datasets at the table level, commercial/semi-open checkpoints (`TimesFM`) disclose domain categories rather than exhaustive series hashes. Every unverified domain claim is explicitly flagged in `configs/pretraining_registry.yaml` and tested under both conservative (`unknown -> False`) and optimistic (`unknown -> True`) codings in Phase 8.
-2. **Hardware & Energy Measurement Scope:** Local zero-shot inference was profiled on CPU with deterministic TDP power accounting (`TDP_estimate`). While relative energy ratios across model families ($0.8\\text{{M}}$ `TTM-R2` vs $14\\text{{M}}$ `Moirai_small` vs $231\\text{{M}}$ `TimesFM` vs autoregressive `Chronos_small`) span three orders of magnitude and are invariant to constant TDP scaling, absolute GPU Watt-hour figures on A100/H100 hardware will differ in batch saturation.
+1. **Pretraining Corpus Opacity & Partial Domain Overlap:** While `Chronos` and `Moirai` (LOTSA) document constituent datasets at the table level, commercial/semi-open checkpoints (`TimesFM`) disclose domain categories rather than exhaustive series hashes. `Chronos` includes macroeconomic/financial series via M4 (`m4_monthly`, etc.) but no daily market-price/volatility series (`Econ/Fin = partial`), and direct test-configuration overlap is controlled explicitly via `dataset_leak`.
+2. **Hardware & Energy Measurement Scope:** Local zero-shot inference was profiled on CPU with deterministic TDP power accounting (`45 W` TDP estimate; latency in `ms/pt` is the primary hardware metric, reported with both median and IQR).
 3. **Actionable Practitioner Decision Rule:**
-   - **When `domain_in_pretraining == False` or Mahalanobis `sim_distance` is in the top tertile (high domain shift):** Classical baselines (`AutoETS`, `AutoTheta`, `AutoARIMA`) win **68.5%** of the time at $< 1\\%$ of the energy cost of autoregressive TSFMs. Default to `AutoETS` / `AutoTheta` or a lightweight mixer (`TTM-R2`) with split conformal calibration.
-   - **When `domain_in_pretraining == True` and series length is moderate-to-long with multi-frequency structure:** Zero-shot `TimesFM` and `Moirai_small` achieve consistent $8\\%–18\\%$ MASE reductions over the best classical model; `Moirai_small` and `TTM-R2-Pretrained` sit on the low-energy Pareto frontier while `TimesFM` occupies the high-accuracy frontier.
+   - **When `domain_in_pretraining == False` or Mahalanobis `sim_distance` is in the top tertile (high domain shift):** Classical baselines (`AutoETS`, `AutoTheta`, `AutoARIMA`, `SeasonalNaive`) beat zero-shot TSFMs on the majority of pairs at $< 1\\%$ of the latency and energy cost of autoregressive TSFMs. Default to `AutoETS` / `AutoTheta` or a lightweight mixer (`TTM-R2`) with per-horizon cross-series split conformal calibration.
+   - **When `domain_in_pretraining == True` and series length is moderate-to-long with multi-frequency structure:** Zero-shot `TimesFM` and `Moirai_small` achieve consistent MASE reductions over the best classical model; `Moirai_small` and `TTM-R2-Pretrained` sit on the low-latency/energy Pareto frontier while `TimesFM` occupies the high-accuracy frontier.
 """
     (report_dir / "report.md").write_text(report_md, encoding="utf-8")
     return {

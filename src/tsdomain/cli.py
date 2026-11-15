@@ -56,74 +56,56 @@ def run_phase1_data() -> None:
     print(f"  -> Saved spx_daily.parquet: {len(df_spx)} trading days ({df_spx['Date'].min().date()} to {df_spx['Date'].max().date()}).")
 
 
-def main() -> None:
-    target = sys.argv[1].lower() if len(sys.argv) > 1 else "all"
-    if target == "data":
+def _run_step(step: str) -> None:
+    if step == "data":
         run_phase1_data()
-    elif target == "baselines":
+    elif step == "baselines":
         from tsdomain.baselines.run_baselines import run_phase2_baselines
 
         run_phase2_baselines()
-    elif target == "features":
+    elif step == "features":
         from tsdomain.features.run_features import run_phase3_features
 
         run_phase3_features()
-    elif target == "models":
+    elif step == "models":
         from tsdomain.models.run_models import run_phase4_models
 
         run_phase4_models()
-    elif target == "uncertainty":
+    elif step == "uncertainty":
         from tsdomain.metrics.conformal import run_phase5_uncertainty
 
         run_phase5_uncertainty()
-    elif target == "mixed-models":
+    elif step == "mixed-models":
         from tsdomain.analysis.grouped_cv import run_phase6_grouped_cv
         from tsdomain.analysis.mixed_models import run_phase6_mixed_models
 
         run_phase6_mixed_models()
         run_phase6_grouped_cv()
-    elif target == "finance":
+    elif step == "finance":
         from tsdomain.analysis.finance_case import run_phase7_finance
 
         run_phase7_finance()
-    elif target == "ablations":
+    elif step == "ablations":
         from tsdomain.analysis.ablations import run_phase8_ablations
 
         run_phase8_ablations()
-    elif target == "report":
-        from tsdomain.analysis.report_assets import run_phase9_report
-
-        run_phase9_report()
-    elif target == "all":
-        run_phase1_data()
-        from tsdomain.baselines.run_baselines import run_phase2_baselines
-
-        run_phase2_baselines()
-        from tsdomain.features.run_features import run_phase3_features
-
-        run_phase3_features()
-        from tsdomain.models.run_models import run_phase4_models
-
-        run_phase4_models()
-        from tsdomain.metrics.conformal import run_phase5_uncertainty
-
-        run_phase5_uncertainty()
-        from tsdomain.analysis.grouped_cv import run_phase6_grouped_cv
-        from tsdomain.analysis.mixed_models import run_phase6_mixed_models
-
-        run_phase6_mixed_models()
-        run_phase6_grouped_cv()
-        from tsdomain.analysis.finance_case import run_phase7_finance
-
-        run_phase7_finance()
-        from tsdomain.analysis.ablations import run_phase8_ablations
-
-        run_phase8_ablations()
+    elif step == "report":
         from tsdomain.analysis.report_assets import run_phase9_report
 
         run_phase9_report()
     else:
-        raise SystemExit(f"Unknown CLI target: {target}")
+        raise SystemExit(f"Unknown CLI target: {step}")
+
+
+def main() -> None:
+    target = sys.argv[1].lower() if len(sys.argv) > 1 else "all"
+    steps = (
+        ["data", "baselines", "features", "models", "uncertainty", "mixed-models", "finance", "ablations", "report"]
+        if target == "all"
+        else [target]
+    )
+    for step in steps:
+        _run_step(step)
 
 
 if __name__ == "__main__":

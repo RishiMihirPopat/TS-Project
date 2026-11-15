@@ -50,7 +50,7 @@ class ModelsFileSchema(BaseModel):
 
 
 class DomainCoverageClaim(BaseModel):
-    in_pretraining: Literal["true", "false", "unknown"]
+    in_pretraining: Literal["true", "false", "partial", "unknown"]
     verified: bool
     source_url: str
     notes: Optional[str] = None
@@ -59,11 +59,13 @@ class DomainCoverageClaim(BaseModel):
 class PretrainingModelEntry(BaseModel):
     checkpoint_id: str
     family: Optional[str] = None
+    param_count: Optional[int] = None
     inherits_from: Optional[str] = None
     pretraining_corpus_name: Optional[str] = None
     training_cutoff: str
     finance_included: bool
     agriculture_mandi_included: Optional[bool] = False
+    dataset_leaks: List[str] = Field(default_factory=list)
     domains_covered: Optional[Dict[str, DomainCoverageClaim]] = None
 
 
@@ -105,8 +107,16 @@ def load_and_validate_configs(config_dir: Path = Path("configs")) -> Dict[str, A
                 raise ValueError(f"Model {model_name} inherits_from unknown parent {entry.inherits_from}")
             if entry.domains_covered is None and parent.domains_covered is not None:
                 entry.domains_covered = parent.domains_covered.copy()
+            elif entry.domains_covered is not None and parent.domains_covered is not None:
+                merged = parent.domains_covered.copy()
+                merged.update(entry.domains_covered)
+                entry.domains_covered = merged
+            if not entry.dataset_leaks and parent.dataset_leaks:
+                entry.dataset_leaks = list(parent.dataset_leaks)
             if entry.family is None:
                 entry.family = parent.family
+            if entry.param_count is None:
+                entry.param_count = parent.param_count
             if entry.pretraining_corpus_name is None:
                 entry.pretraining_corpus_name = parent.pretraining_corpus_name
 

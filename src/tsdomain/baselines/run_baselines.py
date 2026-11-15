@@ -13,25 +13,11 @@ from tsdomain.config import load_and_validate_configs
 from tsdomain.data.gift_eval import generate_rolling_windows
 from tsdomain.metrics.point import aggregate_config_metrics, mase
 
-CORE_FOUR_CLASSICAL = ["SeasonalNaive", "AutoETS", "AutoTheta", "AutoARIMA"]
+CORE_FOUR_CLASSICAL = ["Naive", "SeasonalNaive", "AutoETS", "AutoTheta", "AutoARIMA"]
 ALL_CLASSICAL_MODELS = ["Naive", "SeasonalNaive", "Drift", "AutoETS", "AutoTheta", "AutoARIMA"]
-LEADERBOARD_FOUR_CLASSICAL = ["Seasonal_Naive", "Auto_ETS", "Auto_Theta", "Auto_Arima"]
+LEADERBOARD_FOUR_CLASSICAL = ["Naive", "Seasonal_Naive", "Auto_ETS", "Auto_Theta", "Auto_Arima"]
 
-LOCAL_CONFIGS = [
-    "m4_monthly/M/short",
-    "m4_quarterly/Q/short",
-    "ett1/D/short",
-    "solar/W/short",
-    "hospital/M/short",
-    "us_births/M/short",
-    "saugeen/W/short",
-    "jena_weather/D/short",
-    "hierarchical_sales/W/short",
-    "loop_seattle/D/short",
-    "bizitobs_l2c/H/short",
-    "unseen_mandi/W/short",
-    "unseen_recency/D/short",
-]
+LOCAL_CONFIGS: List[str] = load_and_validate_configs()["experiment"].local_eval_configs
 
 
 def load_evaluation_windows_for_config(config_name: str) -> List[Dict]:

@@ -12,10 +12,14 @@ from scipy import stats
 from sklearn.model_selection import LeaveOneGroupOut
 
 from tsdomain.analysis.mixed_models import (
+    CHAR_COLS,
     MODEL_FORMULAS,
     build_phase6_analysis_dataset,
 )
 from tsdomain.utils import PROJECT_ROOT, ensure_dir
+
+
+SEASONALITY_THRESHOLD: float = 0.30
 
 
 def _fit_and_predict_lodo_fold(
@@ -30,10 +34,9 @@ def _fit_and_predict_lodo_fold(
         return np.full(len(test_df), float(np.mean(y_train)), dtype=float)
 
     if model_name == "TanJerome_Simon_Heuristic":
-        # Tan Jerome & Simon (2026) two-feature heuristic: length < 700 and strong seasonality
-        seas_med = float(train_df["seasonal_strength"].median())
+        # Tan Jerome & Simon (2026) two-feature heuristic: n_train < 700 and non-negligible seasonality (>= 0.30)
         tr_short = (train_df["length"] < 700).astype(int)
-        tr_seas = (train_df["seasonal_strength"] >= seas_med).astype(int)
+        tr_seas = (train_df["seasonal_strength"] >= SEASONALITY_THRESHOLD).astype(int)
         cell_means: Dict[tuple, float] = {}
         grand_mean = float(np.mean(y_train))
         for s_flag in (0, 1):
@@ -43,7 +46,7 @@ def _fit_and_predict_lodo_fold(
                     float(train_df.loc[mask, "delta_mase"].mean()) if mask.any() else grand_mean
                 )
         te_short = (test_df["length"] < 700).astype(int).to_numpy()
-        te_seas = (test_df["seasonal_strength"] >= seas_med).astype(int).to_numpy()
+        te_seas = (test_df["seasonal_strength"] >= SEASONALITY_THRESHOLD).astype(int).to_numpy()
         return np.array(
             [cell_means[(int(s), int(z))] for s, z in zip(te_short, te_seas)],
             dtype=float,
@@ -53,6 +56,10 @@ def _fit_and_predict_lodo_fold(
     # Note: held-out test_df has an unseen base_dataset, so base_dataset random effect is 0 out-of-sample,
     # while model_family random effect transfers across datasets!
     formula = MODEL_FORMULAS[model_name]
+    if "source_local" in train_df.columns and train_df["source_local"].nunique() <= 1:
+        formula = formula.replace("+ source_local ", "").replace("+ source_local", "")
+    if "dataset_leak" in train_df.columns and train_df["dataset_leak"].nunique() <= 1:
+        formula = formula.replace("+ dataset_leak ", "").replace("+ dataset_leak", "")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         try:
@@ -68,10 +75,13 @@ def _fit_and_predict_lodo_fold(
                 [re_map.get(fam, 0.0) for fam in test_df["model_family"]],
                 dtype=float,
             )
-            return fe_pred + re_pred
+            out_pred = fe_pred + re_pred
+            if not np.all(np.isfinite(out_pred)) or np.max(np.abs(out_pred)) > 5.0:
+                raise ValueError("Rank-deficient LBFGS step")
+            return np.clip(out_pred, -2.5, 2.5)
         except Exception:
             ols_res = smf.ols(formula + " + C(model_family)", data=train_df).fit()
-            return np.asarray(ols_res.predict(test_df), dtype=float)
+            return np.clip(np.asarray(ols_res.predict(test_df), dtype=float), -2.5, 2.5)
 
 
 def run_phase6_grouped_cv(df: pd.DataFrame | None = None) -> pd.DataFrame:
@@ -99,6 +109,11 @@ def run_phase6_grouped_cv(df: pd.DataFrame | None = None) -> pd.DataFrame:
     for train_idx, test_idx in logo.split(df, groups=groups):
         train_df = df.iloc[train_idx].copy()
         test_df = df.iloc[test_idx].copy()
+        for col in CHAR_COLS + ["sim_share", "sim_distance", "sim_distance_knn", "log_params"]:
+            mu = float(train_df[col].mean())
+            sd = max(float(train_df[col].std(ddof=1)), 1e-12)
+            train_df[f"z_{col}"] = (train_df[col] - mu) / sd
+            test_df[f"z_{col}"] = (test_df[col] - mu) / sd
         held_out_ds = str(test_df["base_dataset"].iloc[0])
 
         fold_df = test_df[

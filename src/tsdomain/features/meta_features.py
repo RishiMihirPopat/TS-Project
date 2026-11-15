@@ -35,13 +35,22 @@ META_FEATURE_NAMES: List[str] = [
 
 
 def _stl_trend_and_seasonal_strength(x: np.ndarray, period: int) -> Dict[str, float]:
-    """Compute Hyndman STL trend_strength and seasonal_strength."""
+    """Compute Hyndman STL trend_strength and seasonal_strength with OLS linear fallback when n < 2*period + 1."""
     n = len(x)
-    eff_period = int(period) if (period >= 2 and n >= 2 * period) else 2
-    if n < 2 * eff_period or np.std(x) < 1e-12:
+    if n < 4 or np.std(x) < 1e-12:
         return {"trend_strength": 0.0, "seasonal_strength": 0.0}
+    if period < 2 or n < 2 * int(period) + 1:
+        t_idx = np.arange(n, dtype=float)
+        slope, intercept = np.polyfit(t_idx, x, 1)
+        rem = x - (slope * t_idx + intercept)
+        var_rem = float(np.var(rem, ddof=1))
+        var_tot = float(np.var(x, ddof=1))
+        return {
+            "trend_strength": float(max(0.0, min(1.0, 1.0 - var_rem / max(var_tot, 1e-12)))),
+            "seasonal_strength": 0.0,
+        }
 
-    # Ensure odd seasonal window >= 7 for statsmodels STL
+    eff_period = int(period)
     seasonal_win = max(7, eff_period if eff_period % 2 == 1 else eff_period + 1)
     try:
         with warnings.catch_warnings():
@@ -56,11 +65,7 @@ def _stl_trend_and_seasonal_strength(x: np.ndarray, period: int) -> Dict[str, fl
         var_detrend = float(np.var(seas + rem, ddof=1))
 
         trend_str = max(0.0, min(1.0, 1.0 - var_rem / max(var_deseas, 1e-12)))
-        seas_str = (
-            max(0.0, min(1.0, 1.0 - var_rem / max(var_detrend, 1e-12)))
-            if period >= 2 and n >= 2 * period
-            else 0.0
-        )
+        seas_str = max(0.0, min(1.0, 1.0 - var_rem / max(var_detrend, 1e-12)))
         return {"trend_strength": float(trend_str), "seasonal_strength": float(seas_str)}
     except Exception:
         return {"trend_strength": 0.0, "seasonal_strength": 0.0}
@@ -93,45 +98,41 @@ def _normalized_spectral_entropy(x: np.ndarray) -> float:
     return float(np.clip(ent, 0.0, 1.0))
 
 
-def _hurst_rs(x: np.ndarray) -> float:
-    """Compute Hurst exponent via Rescaled Range (R/S) analysis over sub-series lags."""
+def _hurst_dfa(x: np.ndarray) -> float:
+    """Compute Hurst exponent via Detrended Fluctuation Analysis (DFA; Peng et al., 1994)."""
     n = len(x)
     if n < 20 or np.std(x) < 1e-12:
         return 0.5
 
-    max_k = min(n // 2, 128)
-    min_k = 8
-    if max_k <= min_k:
+    y_prof = np.cumsum(x - float(np.mean(x)))
+    max_s = min(n // 4, 128)
+    min_s = 8
+    if max_s <= min_s:
         return 0.5
 
-    lags = np.unique(np.geomspace(min_k, max_k, num=10).astype(int))
-    lags = lags[lags >= 4]
-    rs_vals = []
-    valid_lags = []
+    scales = np.unique(np.geomspace(min_s, max_s, num=10).astype(int))
+    flucts: List[float] = []
+    valid_scales: List[int] = []
 
-    # R/S on first differences (increments) or demeaned levels:
-    # Standard R/S for time-series persistence (tsfeatures / Hurst 1951) operates on demeaned chunks
-    for k in lags:
-        n_chunks = n // k
-        if n_chunks < 1:
+    for s in scales:
+        n_boxes = n // int(s)
+        if n_boxes < 2:
             continue
-        chunk_rs = []
-        for c in range(n_chunks):
-            seg = x[c * k : (c + 1) * k]
-            s_std = float(np.std(seg, ddof=1))
-            if s_std <= 1e-12:
-                continue
-            dev = np.cumsum(seg - np.mean(seg))
-            r_range = float(np.max(dev) - np.min(dev))
-            if r_range > 0:
-                chunk_rs.append(r_range / s_std)
-        if chunk_rs:
-            rs_vals.append(np.mean(chunk_rs))
-            valid_lags.append(k)
+        segs = y_prof[: n_boxes * int(s)].reshape(n_boxes, int(s))
+        t = np.arange(int(s), dtype=float)
+        t_c = t - np.mean(t)
+        denom = max(float(np.sum(t_c**2)), 1e-12)
+        seg_means = np.mean(segs, axis=1, keepdims=True)
+        slopes = ((segs - seg_means) @ t_c)[:, None] / denom
+        trends = seg_means + slopes * t_c[None, :]
+        rms = float(np.sqrt(np.mean((segs - trends) ** 2)))
+        if rms > 1e-12:
+            flucts.append(rms)
+            valid_scales.append(int(s))
 
-    if len(valid_lags) < 2:
+    if len(valid_scales) < 2:
         return 0.5
-    slope, _ = np.polyfit(np.log(valid_lags), np.log(rs_vals), 1)
+    slope, _ = np.polyfit(np.log(valid_scales), np.log(flucts), 1)
     return float(np.clip(slope, 0.05, 0.99))
 
 
@@ -181,14 +182,14 @@ def compute_series_meta_features(
             "log_length": float(np.log(max(n, 1))),
         }
 
-    # Cap series length at 2048 most recent observations for STL/PSD speed on ultra-long series
+    # shortcut: caps series at last 2048 points for STL/PSD speed, remove cap if full-history spectral resolution is needed
     arr_eval = arr[-2048:] if n > 2048 else arr
 
     stl_feats = _stl_trend_and_seasonal_strength(arr_eval, period=stl_period)
     spec_ent = _normalized_spectral_entropy(arr_eval)
     fcast = 1.0 - spec_ent
-    hurst_val = _hurst_rs(arr_eval)
-    tile_width = max(4, stl_period if stl_period >= 4 else 10)
+    hurst_val = _hurst_dfa(arr_eval)
+    tile_width = max(int(stl_period), 10)
     stab_lump = _stability_and_lumpiness(arr_eval, window_size=tile_width)
 
     return {

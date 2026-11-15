@@ -79,62 +79,88 @@ def apply_conformal_to_forecast_df(
     method: str = "cqr",
     alpha: float = 0.20,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, float]:
-    """Split forecast DataFrame into time-ordered cal (earliest 20%) and eval (latest 80%) and calibrate."""
+    """Calibrate on window 1 across all series and evaluate on window 2 per horizon step (exchangeable across series)."""
     df = fc_df.copy()
-    # Sort strictly by window_id and timestamp/horizon_step to preserve temporal ordering (t_cal < t_eval)
     unique_win_ids = sorted(df["window_id"].unique())
     if len(unique_win_ids) >= 2:
-        n_cal_wins = max(1, int(np.floor(0.20 * len(unique_win_ids))))
-        cal_wins = set(unique_win_ids[:n_cal_wins])
-        cal_mask = df["window_id"].isin(cal_wins)
+        cal_mask = df["window_id"] < unique_win_ids[-1]
     else:
-        # When w=1 (e.g. M4), split chronologically by timestamp / earliest 20% of series/steps
-        df = df.sort_values(["timestamp", "item_id", "horizon_step"]).reset_index(drop=True)
-        n_cal = max(1, int(np.floor(0.20 * len(df))))
-        cal_mask = pd.Series(False, index=df.index)
-        cal_mask.iloc[:n_cal] = True
+        # Single-window configs (M4): split 50/50 across series so each horizon step h is calibrated across series
+        items = sorted(df["item_id"].unique())
+        cal_items = set(items[: max(1, len(items) // 2)])
+        cal_mask = df["item_id"].isin(cal_items)
 
     cal_df = df[cal_mask].copy()
     eval_df = df[~cal_mask].copy()
     if eval_df.empty:
         eval_df = cal_df.copy()
 
-    y_cal = cal_df["y_true"].to_numpy(dtype=float)
+    # Normalize scores by per-series scale (window 1 y_true when available, else forecast mean magnitude)
+    cal_scales = (
+        cal_df.groupby("item_id")["y_true"]
+        .apply(lambda s: max(float(np.mean(np.abs(s))), 1e-6))
+        .to_dict()
+    )
+    eval_pred_scales = (
+        eval_df.groupby("item_id")["mean"]
+        .apply(lambda s: max(float(np.mean(np.abs(s))), 1e-6))
+        .to_dict()
+    )
+    s_cal = cal_df["item_id"].map(lambda i: cal_scales.get(i, 1.0)).to_numpy(dtype=float)
+    s_eval = eval_df["item_id"].map(lambda i: cal_scales.get(i, eval_pred_scales.get(i, 1.0))).to_numpy(dtype=float)
+
+    cal_df = cal_df.assign(
+        _y=cal_df["y_true"].to_numpy(dtype=float) / s_cal,
+        _mean=cal_df["mean"].to_numpy(dtype=float) / s_cal,
+        _q10=cal_df["q0.1"].to_numpy(dtype=float) / s_cal,
+        _q90=cal_df["q0.9"].to_numpy(dtype=float) / s_cal,
+    )
     post_eval_df = eval_df.copy()
 
     if method == "cqr":
-        offset = compute_cqr_offset(
-            y_cal,
-            cal_df["q0.1"].to_numpy(dtype=float),
-            cal_df["q0.9"].to_numpy(dtype=float),
-            alpha=alpha,
+        pooled_off = compute_cqr_offset(
+            cal_df["_y"].to_numpy(), cal_df["_q10"].to_numpy(), cal_df["_q90"].to_numpy(), alpha=alpha
         )
+        off_by_h = {
+            int(h): (
+                compute_cqr_offset(g["_y"].to_numpy(), g["_q10"].to_numpy(), g["_q90"].to_numpy(), alpha=alpha)
+                if len(g) >= 5
+                else pooled_off
+            )
+            for h, g in cal_df.groupby("horizon_step")
+        }
+        off_vec = eval_df["horizon_step"].map(lambda h: off_by_h.get(int(h), pooled_off)).to_numpy(dtype=float)
         z_80 = float(norm.ppf(0.9))
         for q, col in zip(QUANTILE_LEVELS, QUANTILE_COLS):
             if abs(q - 0.5) < 1e-9:
                 continue
-            # Scale CQR offset proportionally across symmetric quantile pairs
             scale_q = abs(float(norm.ppf(q))) / z_80
             sign_q = -1.0 if q < 0.5 else 1.0
-            post_eval_df[col] = eval_df[col].to_numpy(dtype=float) + sign_q * scale_q * offset
-        # Enforce quantile monotonicity after additive adjustment
+            post_eval_df[col] = eval_df[col].to_numpy(dtype=float) + sign_q * scale_q * off_vec * s_eval
         q_mat = np.column_stack([post_eval_df[c].to_numpy(dtype=float) for c in QUANTILE_COLS])
         q_mat = np.maximum.accumulate(q_mat, axis=1)
         for idx, col in enumerate(QUANTILE_COLS):
             post_eval_df[col] = q_mat[:, idx]
-        return eval_df, post_eval_df, offset
+        return eval_df, post_eval_df, float(np.mean(list(off_by_h.values())))
     else:
-        halfwidth_80 = compute_abs_residual_conformal_halfwidth(
-            y_cal,
-            cal_df["mean"].to_numpy(dtype=float),
-            alpha=alpha,
+        pooled_hw = compute_abs_residual_conformal_halfwidth(
+            cal_df["_y"].to_numpy(), cal_df["_mean"].to_numpy(), alpha=alpha
         )
+        hw_by_h = {
+            int(h): (
+                compute_abs_residual_conformal_halfwidth(g["_y"].to_numpy(), g["_mean"].to_numpy(), alpha=alpha)
+                if len(g) >= 5
+                else pooled_hw
+            )
+            for h, g in cal_df.groupby("horizon_step")
+        }
+        hw_vec = eval_df["horizon_step"].map(lambda h: hw_by_h.get(int(h), pooled_hw)).to_numpy(dtype=float)
         z_80 = float(norm.ppf(0.9))
-        sigma_cal = halfwidth_80 / z_80
+        sigma_cal = (hw_vec / z_80) * s_eval
         mean_eval = eval_df["mean"].to_numpy(dtype=float)
         for q, col in zip(QUANTILE_LEVELS, QUANTILE_COLS):
             post_eval_df[col] = mean_eval + float(norm.ppf(q)) * sigma_cal
-        return eval_df, post_eval_df, halfwidth_80
+        return eval_df, post_eval_df, float(np.mean(list(hw_by_h.values())))
 
 
 def verify_synthetic_conformal_coverage(seed: int = 20260410) -> Dict[str, float]:
@@ -203,33 +229,28 @@ def run_phase5_uncertainty() -> Tuple[pd.DataFrame, pd.DataFrame]:
             )
 
             y_true = pre_df["y_true"].to_numpy(dtype=float)
-            scale_ref = max(float(np.mean(np.abs(y_true))), 1e-6)
-
-            pre_q_map = {q: pre_df[f"q{q:.1f}"].to_numpy(dtype=float) for q in QUANTILE_LEVELS}
-            post_q_map = {q: post_df[f"q{q:.1f}"].to_numpy(dtype=float) for q in QUANTILE_LEVELS}
-
-            pre_cov_info = coverage_and_width(
-                y_true, pre_df["q0.1"].to_numpy(dtype=float), pre_df["q0.9"].to_numpy(dtype=float)
+            s_eval = (
+                pre_df.groupby("item_id")["y_true"]
+                .transform(lambda s: max(float(np.mean(np.abs(s))), 1e-6))
+                .to_numpy(dtype=float)
             )
-            post_cov_info = coverage_and_width(
-                y_true, post_df["q0.1"].to_numpy(dtype=float), post_df["q0.9"].to_numpy(dtype=float)
-            )
+            y_scaled = y_true / s_eval
+            pre_q10_s = pre_df["q0.1"].to_numpy(dtype=float) / s_eval
+            pre_q90_s = pre_df["q0.9"].to_numpy(dtype=float) / s_eval
+            post_q10_s = post_df["q0.1"].to_numpy(dtype=float) / s_eval
+            post_q90_s = post_df["q0.9"].to_numpy(dtype=float) / s_eval
 
-            pre_crps = crps_weighted_quantile_loss(y_true, pre_q_map)
-            post_crps = crps_weighted_quantile_loss(y_true, post_q_map)
+            pre_q_map = {q: pre_df[f"q{q:.1f}"].to_numpy(dtype=float) / s_eval for q in QUANTILE_LEVELS}
+            post_q_map = {q: post_df[f"q{q:.1f}"].to_numpy(dtype=float) / s_eval for q in QUANTILE_LEVELS}
 
-            pre_is = interval_score(
-                y_true,
-                pre_df["q0.1"].to_numpy(dtype=float),
-                pre_df["q0.9"].to_numpy(dtype=float),
-                alpha=0.20,
-            ) / scale_ref
-            post_is = interval_score(
-                y_true,
-                post_df["q0.1"].to_numpy(dtype=float),
-                post_df["q0.9"].to_numpy(dtype=float),
-                alpha=0.20,
-            ) / scale_ref
+            pre_cov_info = coverage_and_width(y_scaled, pre_q10_s, pre_q90_s, y_train=[1.0])
+            post_cov_info = coverage_and_width(y_scaled, post_q10_s, post_q90_s, y_train=[1.0])
+
+            pre_crps = crps_weighted_quantile_loss(y_scaled, pre_q_map)
+            post_crps = crps_weighted_quantile_loss(y_scaled, post_q_map)
+
+            pre_is = interval_score(y_scaled, pre_q10_s, pre_q90_s, alpha=0.20)
+            post_is = interval_score(y_scaled, post_q10_s, post_q90_s, alpha=0.20)
 
             rows.append(
                 {

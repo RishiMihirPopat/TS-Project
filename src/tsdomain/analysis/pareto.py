@@ -75,7 +75,6 @@ def run_pareto_analysis() -> Dict[str, pd.DataFrame]:
                 "infer_time_ms_per_point",
                 "infer_time_iqr_ms",
                 "peak_ram_mb",
-                "peak_vram_mb",
                 "energy_wh_total",
                 "energy_mwh_per_1k_points",
                 "energy_source",
@@ -85,9 +84,9 @@ def run_pareto_analysis() -> Dict[str, pd.DataFrame]:
         how="inner",
     )
 
-    # Join best classical baseline MASE and energy per config
+    # Join best classical baseline MASE and energy per config (common 5-model classical set)
     best_cls_energy = (
-        merged[merged["model"].isin(["SeasonalNaive", "AutoETS", "AutoTheta", "AutoARIMA"])]
+        merged[merged["model"].isin(["Naive", "SeasonalNaive", "AutoETS", "AutoTheta", "AutoARIMA"])]
         .sort_values("mase")
         .groupby("config", as_index=False)
         .first()[
@@ -111,18 +110,25 @@ def run_pareto_analysis() -> Dict[str, pd.DataFrame]:
 
     merged = merged.merge(best_cls_energy, on="config", how="left")
     merged["inv_mase"] = 1.0 / np.maximum(merged["mase"], 1e-6)
-    merged["delta_mase"] = (
-        merged["best_classical_mase"] - merged["mase"]
-    ) / merged["best_classical_mase"]
-    merged["delta_mase_pct"] = 100.0 * merged["delta_mase"]
+    merged["y_log_mase_ratio"] = np.log(
+        np.maximum(merged["mase"], 1e-6) / np.maximum(merged["best_classical_mase"], 1e-6)
+    )
+    merged["delta_mase"] = -merged["y_log_mase_ratio"]
+    merged["delta_mase_pct"] = (1.0 - np.exp(merged["y_log_mase_ratio"])) * 100.0
 
-    # Marginal energy cost per 1% MASE gain (mWh per 1k points per 1% MASE improvement)
+    # Marginal cost per 1% MASE gain computed strictly over positive-gain configurations (gain_pct > 0)
     delta_energy = merged["energy_mwh_per_1k_points"] - merged["best_classical_energy_mwh"]
+    delta_latency = merged["infer_time_ms_per_point"] - merged["best_classical_ms_per_pt"]
     gain_pct = merged["delta_mase_pct"]
     merged["dominated_by_classical"] = gain_pct <= 0.0
     merged["energy_per_1pct_mase_gain_mwh"] = np.where(
         gain_pct > 0.0,
-        np.maximum(0.0, delta_energy) / np.maximum(gain_pct, 1e-6),
+        np.maximum(0.0, delta_energy) / gain_pct,
+        np.nan,
+    )
+    merged["latency_ms_per_1pct_mase_gain"] = np.where(
+        gain_pct > 0.0,
+        np.maximum(0.0, delta_latency) / gain_pct,
         np.nan,
     )
     merged["speedup_vs_best_classical"] = (
@@ -146,21 +152,31 @@ def run_pareto_analysis() -> Dict[str, pd.DataFrame]:
 
     merged.to_csv(analysis_dir / "pareto_table.csv", index=False)
 
-    # Model-level Pareto summary averaged across all 13 local configs
+    def _iqr(s: pd.Series) -> float:
+        arr = s.dropna().to_numpy(dtype=float)
+        return float(np.percentile(arr, 75) - np.percentile(arr, 25)) if len(arr) > 0 else np.nan
+
+    # Model-level Pareto summary across all 13 local configs (reporting median & IQR alongside mean)
     model_summary = (
         merged.groupby(["model", "model_family_group"], as_index=False)
         .agg(
             param_count=("param_count", "first"),
             mean_mase=("mase", "mean"),
             median_mase=("mase", "median"),
+            iqr_mase=("mase", _iqr),
             mean_crps=("crps", "mean"),
             mean_delta_mase_pct=("delta_mase_pct", "mean"),
-            win_rate_vs_best_classical=("delta_mase", lambda s: float((s > 0).mean())),
+            win_rate_vs_best_classical=("delta_mase_pct", lambda s: float((s > 0).mean())),
             mean_infer_ms_per_point=("infer_time_ms_per_point", "mean"),
             median_infer_ms_per_point=("infer_time_ms_per_point", "median"),
+            iqr_infer_ms_per_point=("infer_time_ms_per_point", _iqr),
             mean_peak_ram_mb=("peak_ram_mb", "mean"),
             mean_energy_mwh_per_1k_pts=("energy_mwh_per_1k_points", "mean"),
+            median_energy_mwh_per_1k_pts=("energy_mwh_per_1k_points", "median"),
+            iqr_energy_mwh_per_1k_pts=("energy_mwh_per_1k_points", _iqr),
+            n_positive_gain_configs=("delta_mase_pct", lambda s: int((s > 0).sum())),
             median_energy_per_1pct_gain_mwh=("energy_per_1pct_mase_gain_mwh", "median"),
+            median_latency_ms_per_1pct_gain=("latency_ms_per_1pct_mase_gain", "median"),
             pareto_config_share_energy=("pareto_energy", "mean"),
         )
         .sort_values("mean_mase")

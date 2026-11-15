@@ -23,7 +23,7 @@ def test_configs_validate_against_schema() -> None:
     for model_name, entry in cfgs["pretraining_registry"].models.items():
         assert entry.domains_covered is not None, f"Missing domains_covered on {model_name}"
         for dom, claim in entry.domains_covered.items():
-            assert claim.in_pretraining in {"true", "false", "unknown"}
+            assert claim.in_pretraining in {"true", "false", "unknown", "partial"}
             assert isinstance(claim.verified, bool)
             assert claim.source_url.startswith("http")
 

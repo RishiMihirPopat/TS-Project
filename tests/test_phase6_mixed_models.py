@@ -46,6 +46,8 @@ def test_phase6_mixed_model_outputs_and_lodo_cv() -> None:
         assert term in m2_coefs["term"].values, f"Missing {term} in M2 coefficients"
     assert np.isfinite(m2_coefs["boot_ci95_low"].to_numpy()).all()
     assert np.isfinite(m2_coefs["boot_ci95_high"].to_numpy()).all()
+    assert (m2_coefs["boot_ci95_low"] <= m2_coefs["estimate_reml"]).all()
+    assert (m2_coefs["estimate_reml"] <= m2_coefs["boot_ci95_high"]).all()
     assert np.isfinite(
         m2_coefs[m2_coefs["term"].str.contains("sim_")]["fdr_bh_q_value"].to_numpy()
     ).all()

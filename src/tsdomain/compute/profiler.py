@@ -15,7 +15,6 @@ from __future__ import annotations
 import logging
 import os
 import time
-from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple
 
@@ -25,32 +24,7 @@ import psutil
 os.environ.setdefault("CODECARBON_LOG_LEVEL", "ERROR")
 logging.getLogger("codecarbon").setLevel(logging.ERROR)
 
-
-@dataclass
-class ComputeProfileResult:
-    model_id: str
-    dataset_config: str
-    device: str
-    param_count: int
-    model_load_s: float
-    n_series: int
-    n_windows: int
-    n_forecast_points: int
-    n_warmup: int
-    n_repeats: int
-    runtime_mean_s: float
-    runtime_std_s: float
-    ms_per_1000_forecasts: float
-    peak_ram_mean_mb: float
-    peak_ram_std_mb: float
-    peak_gpu_mean_mb: float
-    peak_gpu_std_mb: float
-    energy_mean_kwh: float
-    energy_std_kwh: float
-    energy_method: str
-
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+DEFAULT_CPU_TDP_WATTS: float = 45.0
 
 
 def _detect_energy_method(device: str) -> str:
@@ -127,8 +101,8 @@ def _measure_single_pass(
 
         peak_gpu_mb = float(torch.cuda.max_memory_allocated() / (1024.0 * 1024.0))
 
-    # If CodeCarbon returned 0 or failed on a sub-second pass, compute deterministic TDP energy (45W CPU / 150W GPU)
-    tdp_watts = 150.0 if has_cuda else 45.0
+    # shortcut: TDP fallback when RAPL/NVML counters are unavailable, pass use_codecarbon=True on Linux/CUDA hosts
+    tdp_watts = 150.0 if has_cuda else DEFAULT_CPU_TDP_WATTS
     tdp_kwh = (runtime_s * tdp_watts) / 3_600_000.0
     if cc_kwh is not None and cc_kwh > 1e-10:
         energy_kwh = float(cc_kwh)
@@ -138,75 +112,6 @@ def _measure_single_pass(
             energy_method = "TDP_estimate"
 
     return output, float(runtime_s), float(peak_ram_mb), float(peak_gpu_mb), float(energy_kwh), energy_method
-
-
-def profile_callable_repeats(
-    fn: Callable[[], Any],
-    *,
-    model_id: str,
-    dataset_config: str,
-    device: str,
-    param_count: int,
-    model_load_s: float,
-    n_series: int,
-    n_windows: int,
-    n_forecast_points: int,
-    n_warmup: int = 1,
-    n_repeats: int = 3,
-) -> Tuple[Any, ComputeProfileResult]:
-    """Execute warm-up pass(es) followed by `n_repeats` profiled passes and return (output, profile)."""
-    last_output = None
-    for _ in range(max(0, n_warmup)):
-        last_output, _, _, _, _, _ = _measure_single_pass(fn, device=device, use_codecarbon=False)
-
-    runtimes: List[float] = []
-    rams: List[float] = []
-    gpus: List[float] = []
-    energies: List[float] = []
-    method_str = _detect_energy_method(device)
-
-    # Use CodeCarbon on the first profiled repeat and TDP/timer scaling across all repeats so overhead stays low
-    for rep_idx in range(max(1, n_repeats)):
-        out, rt, ram, gpu, kwh, m_str = _measure_single_pass(
-            fn, device=device, use_codecarbon=(rep_idx == 0)
-        )
-        last_output = out
-        runtimes.append(rt)
-        rams.append(ram)
-        gpus.append(gpu)
-        energies.append(kwh)
-        method_str = m_str
-
-    rt_mean = float(np.mean(runtimes))
-    rt_std = float(np.std(runtimes, ddof=1)) if len(runtimes) > 1 else 0.0
-    ms_per_1000 = float((rt_mean * 1000.0) / max(1.0, n_windows / 1000.0))
-
-    prof = ComputeProfileResult(
-        model_id=model_id,
-        dataset_config=dataset_config,
-        device=device,
-        param_count=int(param_count),
-        model_load_s=float(model_load_s),
-        n_series=int(n_series),
-        n_windows=int(n_windows),
-        n_forecast_points=int(n_forecast_points),
-        n_warmup=int(n_warmup),
-        n_repeats=int(n_repeats),
-        runtime_mean_s=rt_mean,
-        runtime_std_s=rt_std,
-        ms_per_1000_forecasts=ms_per_1000,
-        peak_ram_mean_mb=float(np.mean(rams)),
-        peak_ram_std_mb=float(np.std(rams, ddof=1)) if len(rams) > 1 else 0.0,
-        peak_gpu_mean_mb=float(np.mean(gpus)),
-        peak_gpu_std_mb=float(np.std(gpus, ddof=1)) if len(gpus) > 1 else 0.0,
-        energy_mean_kwh=float(np.mean(energies)),
-        energy_std_kwh=float(np.std(energies, ddof=1)) if len(energies) > 1 else 0.0,
-        energy_method=method_str,
-    )
-    return last_output, prof
-
-
-DEFAULT_CPU_TDP_WATTS: float = 45.0
 
 
 def profile_callable(

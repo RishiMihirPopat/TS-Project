@@ -1,13 +1,13 @@
-| model | model_family_group | param_count | mean_mase | median_mase | mean_crps | mean_delta_mase_pct | win_rate_vs_best_classical | mean_infer_ms_per_point | median_infer_ms_per_point | mean_peak_ram_mb | mean_energy_mwh_per_1k_pts | median_energy_per_1pct_gain_mwh | pareto_config_share_energy | global_pareto_energy | global_pareto_latency |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| TimesFM | tsfm | 231289280 | 0.952 | 0.805 | 0.180 | 2.020 | 0.538 | 34.838 | 10.339 | 1905.790 | 435.475 | 0.000 | 0.615 | True | True |
-| AutoARIMA | classical | 4 | 1.047 | 1.150 | 0.244 | -4.812 | 0.000 | 25.308 | 24.046 | 252.590 | 316.344 | — | 0.231 | True | True |
-| Chronos_small | tsfm | 46154240 | 1.071 | 1.068 | 0.227 | -10.773 | 0.308 | 29.067 | 25.612 | 4303.736 | 363.332 | 11.542 | 0.000 | False | False |
-| AutoTheta | classical | 2 | 1.103 | 1.079 | 0.274 | -13.375 | 0.000 | 7.264 | 4.671 | 252.428 | 90.796 | — | 0.308 | True | True |
-| AutoETS | classical | 4 | 1.111 | 1.021 | 0.312 | -11.278 | 0.000 | 8.010 | 5.976 | 252.073 | 100.127 | — | 0.385 | False | False |
-| Moirai_small | tsfm | 13827528 | 1.154 | 1.263 | 0.211 | -22.682 | 0.308 | 2.208 | 1.935 | 979.953 | 27.606 | 0.000 | 0.385 | True | True |
-| LightGBM | ml_tabular | 15000 | 1.175 | 1.005 | 0.266 | -18.979 | 0.308 | 7.218 | 4.535 | 582.681 | 90.230 | 0.000 | 0.154 | False | False |
-| TTM-R2-Pretrained | tsfm | 805280 | 1.260 | 1.251 | 0.437 | -37.693 | 0.154 | 0.360 | 0.231 | 1885.448 | 4.501 | 0.000 | 0.692 | True | True |
-| Naive | classical | 2 | 1.285 | 1.336 | 0.503 | -37.177 | 0.000 | 0.248 | 0.257 | 248.022 | 3.103 | — | 0.385 | True | True |
-| Drift | classical | 2 | 1.317 | 1.331 | 0.507 | -39.877 | 0.000 | 0.259 | 0.240 | 248.188 | 3.243 | — | 0.385 | False | False |
-| SeasonalNaive | classical | 2 | 1.343 | 1.350 | 0.453 | -45.910 | 0.000 | 0.250 | 0.240 | 248.189 | 3.127 | — | 0.231 | False | False |
+| model | model_family_group | param_count | mean_mase | median_mase | iqr_mase | mean_crps | mean_delta_mase_pct | win_rate_vs_best_classical | mean_infer_ms_per_point | median_infer_ms_per_point | iqr_infer_ms_per_point | mean_peak_ram_mb | mean_energy_mwh_per_1k_pts | median_energy_mwh_per_1k_pts | iqr_energy_mwh_per_1k_pts | n_positive_gain_configs | median_energy_per_1pct_gain_mwh | median_latency_ms_per_1pct_gain | pareto_config_share_energy | global_pareto_energy | global_pareto_latency |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| TimesFM | tsfm | 231289280 | 1.174 | 1.007 | 0.471 | 0.180 | 1.946 | 0.538 | 34.838 | 10.339 | 8.204 | 1905.790 | 435.475 | 129.241 | 102.552 | 7 | 0.000 | 0.000 | 0.615 | True | True |
+| AutoARIMA | classical | 4 | 1.271 | 1.217 | 0.359 | 0.244 | -4.776 | 0.000 | 25.693 | 24.412 | 14.685 | 252.590 | 321.162 | 305.150 | 183.559 | 0 | — | — | 0.231 | True | True |
+| Chronos_small | tsfm | 46154240 | 1.295 | 1.132 | 0.417 | 0.227 | -10.814 | 0.308 | 29.067 | 25.612 | 11.853 | 4303.736 | 363.332 | 320.144 | 148.163 | 4 | 11.485 | 0.919 | 0.000 | False | False |
+| AutoTheta | classical | 2 | 1.333 | 1.337 | 0.345 | 0.274 | -13.670 | 0.000 | 7.374 | 4.742 | 5.003 | 252.428 | 92.178 | 59.271 | 62.538 | 0 | — | — | 0.385 | True | True |
+| AutoETS | classical | 4 | 1.335 | 1.204 | 0.469 | 0.312 | -11.322 | 0.000 | 8.132 | 6.067 | 11.182 | 252.073 | 101.652 | 75.835 | 139.772 | 0 | — | — | 0.385 | False | False |
+| Moirai_small | tsfm | 13827528 | 1.387 | 1.320 | 0.392 | 0.211 | -22.866 | 0.231 | 2.208 | 1.935 | 2.175 | 979.953 | 27.606 | 24.193 | 27.190 | 3 | 0.000 | 0.000 | 0.385 | True | True |
+| LightGBM | ml_tabular | 15000 | 1.469 | 1.361 | 0.553 | 0.292 | -22.749 | 0.077 | 3.114 | 2.303 | 1.291 | 560.841 | 38.923 | 28.781 | 16.140 | 1 | 0.000 | 0.000 | 0.000 | False | False |
+| SeasonalNaive | classical | 2 | 1.488 | 1.498 | 0.344 | 0.453 | -26.993 | 0.000 | 0.254 | 0.244 | 0.253 | 248.189 | 3.175 | 3.045 | 3.165 | 0 | — | — | 0.231 | True | True |
+| Naive | classical | 2 | 1.522 | 1.498 | 0.322 | 0.503 | -37.321 | 0.000 | 0.252 | 0.261 | 0.225 | 248.022 | 3.150 | 3.263 | 2.812 | 0 | — | — | 0.385 | True | True |
+| TTM-R2-Pretrained | tsfm | 805280 | 1.537 | 1.268 | 0.571 | 0.437 | -38.143 | 0.154 | 0.360 | 0.231 | 0.270 | 1885.448 | 4.501 | 2.890 | 3.381 | 2 | 0.000 | 0.000 | 0.692 | False | False |
+| Drift | classical | 2 | 1.552 | 1.458 | 0.388 | 0.507 | -39.943 | 0.000 | 0.263 | 0.244 | 0.241 | 248.188 | 3.293 | 3.046 | 3.011 | 0 | — | — | 0.385 | False | False |
